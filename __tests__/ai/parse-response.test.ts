@@ -150,6 +150,144 @@ describe("parseAIResponse", () => {
     expect(() => parseAIResponse(bad)).toThrow("outputNodeId");
   });
 
+  test("throws on non-object response (array)", () => {
+    expect(() => parseAIResponse("[]")).toThrow("must be a JSON object");
+  });
+
+  test("throws on null response", () => {
+    expect(() => parseAIResponse("null")).toThrow("must be a JSON object");
+  });
+
+  test("throws on missing edges array", () => {
+    const bad = JSON.stringify({
+      nodes: [
+        { id: "a", name: "A", description: "d", distribution: "beta", mean: 0.5, sd: 0.1, range: [0, 1], unit: "%" },
+      ],
+      edges: [],
+      outputNodeId: "out",
+    });
+    expect(() => parseAIResponse(bad)).toThrow("non-empty 'edges'");
+  });
+
+  test("throws when node is not an object", () => {
+    const bad = JSON.stringify({
+      nodes: ["not an object"],
+      edges: [{ id: "e1", source: "a", target: "out", method: "additive" }],
+      outputNodeId: "out",
+    });
+    expect(() => parseAIResponse(bad)).toThrow("must be an object");
+  });
+
+  test("throws on node with empty id", () => {
+    const bad = JSON.stringify({
+      nodes: [
+        { id: "", name: "A", description: "d", distribution: "beta", mean: 0.5, sd: 0.1, range: [0, 1], unit: "%" },
+      ],
+      edges: [{ id: "e1", source: "a", target: "out", method: "additive" }],
+      outputNodeId: "out",
+    });
+    expect(() => parseAIResponse(bad)).toThrow("non-empty 'id'");
+  });
+
+  test("throws on node without name", () => {
+    const bad = JSON.stringify({
+      nodes: [
+        { id: "a", description: "d", distribution: "beta", mean: 0.5, sd: 0.1, range: [0, 1], unit: "%" },
+      ],
+      edges: [{ id: "e1", source: "a", target: "out", method: "additive" }],
+      outputNodeId: "out",
+    });
+    expect(() => parseAIResponse(bad)).toThrow("'name' string");
+  });
+
+  test("throws on node without description", () => {
+    const bad = JSON.stringify({
+      nodes: [
+        { id: "a", name: "A", distribution: "beta", mean: 0.5, sd: 0.1, range: [0, 1], unit: "%" },
+      ],
+      edges: [{ id: "e1", source: "a", target: "out", method: "additive" }],
+      outputNodeId: "out",
+    });
+    expect(() => parseAIResponse(bad)).toThrow("'description' string");
+  });
+
+  test("throws on node without mean", () => {
+    const bad = JSON.stringify({
+      nodes: [
+        { id: "a", name: "A", description: "d", distribution: "beta", sd: 0.1, range: [0, 1], unit: "%" },
+      ],
+      edges: [{ id: "e1", source: "a", target: "out", method: "additive" }],
+      outputNodeId: "out",
+    });
+    expect(() => parseAIResponse(bad)).toThrow("numeric 'mean'");
+  });
+
+  test("throws on node with bad range", () => {
+    const bad = JSON.stringify({
+      nodes: [
+        { id: "a", name: "A", description: "d", distribution: "beta", mean: 0.5, sd: 0.1, range: [0], unit: "%" },
+      ],
+      edges: [{ id: "e1", source: "a", target: "out", method: "additive" }],
+      outputNodeId: "out",
+    });
+    expect(() => parseAIResponse(bad)).toThrow("'range' array");
+  });
+
+  test("throws on node without unit", () => {
+    const bad = JSON.stringify({
+      nodes: [
+        { id: "a", name: "A", description: "d", distribution: "beta", mean: 0.5, sd: 0.1, range: [0, 1] },
+      ],
+      edges: [{ id: "e1", source: "a", target: "out", method: "additive" }],
+      outputNodeId: "out",
+    });
+    expect(() => parseAIResponse(bad)).toThrow("'unit' string");
+  });
+
+  test("throws when edge is not an object", () => {
+    const bad = JSON.stringify({
+      nodes: [
+        { id: "a", name: "A", description: "d", distribution: "beta", mean: 0.5, sd: 0.1, range: [0, 1], unit: "%" },
+      ],
+      edges: ["not an edge"],
+      outputNodeId: "out",
+    });
+    expect(() => parseAIResponse(bad)).toThrow("must be an object");
+  });
+
+  test("throws on edge with empty id", () => {
+    const bad = JSON.stringify({
+      nodes: [
+        { id: "a", name: "A", description: "d", distribution: "beta", mean: 0.5, sd: 0.1, range: [0, 1], unit: "%" },
+      ],
+      edges: [{ id: "", source: "a", target: "out", method: "additive" }],
+      outputNodeId: "out",
+    });
+    expect(() => parseAIResponse(bad)).toThrow("non-empty 'id'");
+  });
+
+  test("throws on edge with empty source", () => {
+    const bad = JSON.stringify({
+      nodes: [
+        { id: "a", name: "A", description: "d", distribution: "beta", mean: 0.5, sd: 0.1, range: [0, 1], unit: "%" },
+      ],
+      edges: [{ id: "e1", source: "", target: "out", method: "additive" }],
+      outputNodeId: "out",
+    });
+    expect(() => parseAIResponse(bad)).toThrow("non-empty 'source'");
+  });
+
+  test("throws on edge with empty target", () => {
+    const bad = JSON.stringify({
+      nodes: [
+        { id: "a", name: "A", description: "d", distribution: "beta", mean: 0.5, sd: 0.1, range: [0, 1], unit: "%" },
+      ],
+      edges: [{ id: "e1", source: "a", target: "", method: "additive" }],
+      outputNodeId: "out",
+    });
+    expect(() => parseAIResponse(bad)).toThrow("non-empty 'target'");
+  });
+
   test("optional fields default correctly", () => {
     const minimal = JSON.stringify({
       nodes: [

@@ -66,4 +66,30 @@ describe("computeSensitivity", () => {
       );
     }
   });
+
+  test("handles zero-variance baseline (all fixed nodes) gracefully", () => {
+    // Graph with a single node that has extremely small SD → near-zero variance
+    const zeroVar: UncertaintyGraph = {
+      nodes: [
+        { id: "a", name: "A", description: "", distribution: "normal", mean: 0.5, sd: 0.0001, range: [0, 1], unit: "%" },
+      ],
+      edges: [
+        { id: "e1", source: "a", target: "output", method: "additive" },
+      ],
+      outputNodeId: "output",
+    };
+    const results = computeSensitivity(zeroVar, { numSamples: 500, batchSize: 500, seed: 42 });
+    expect(results.length).toBe(1);
+    // Both reductions should be >= 0
+    expect(results[0].varianceReduction).toBeGreaterThanOrEqual(0);
+    expect(results[0].ciWidthReduction).toBeGreaterThanOrEqual(0);
+  });
+
+  test("uses default seed of 42 when none provided", () => {
+    const noSeedConfig = { numSamples: 1000, batchSize: 500 };
+    const r1 = computeSensitivity(PE_GRAPH, noSeedConfig);
+    const r2 = computeSensitivity(PE_GRAPH, noSeedConfig);
+    // Both should use seed=42 and produce identical results
+    expect(r1).toEqual(r2);
+  });
 });

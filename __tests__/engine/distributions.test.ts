@@ -80,4 +80,23 @@ describe("sampleDistribution", () => {
       sampleDistribution(r, "unknown" as any, 0.5, 0.1, [0, 1])
     ).toThrow("Unknown distribution type");
   });
+
+  test("beta with small alpha triggers gamma shape<1 boost path", () => {
+    // When mean is very small and SD is large relative to it,
+    // getBetaParams produces alpha < 1, hitting the gamma boost branch
+    const r = createPRNG(42);
+    const n = 5000;
+    // mean=0.02, sd=0.01 → alpha ≈ 0.02*(0.02*0.98/0.0001 - 1) ≈ 3.72 (not <1)
+    // Need alpha < 1: mean=0.01, sd=0.09 → alpha ≈ 0.01*(0.01*0.99/0.0081 - 1) ≈ -0.0078 → clamped to 0.05
+    // With alpha=0.05 (clamped), shape<1 path is taken
+    const samples = Array.from({ length: n }, () =>
+      sampleDistribution(r, "beta", 0.01, 0.09, [0, 1])
+    );
+    // All samples should be in range
+    for (const s of samples) {
+      expect(s).toBeGreaterThanOrEqual(0);
+      expect(s).toBeLessThanOrEqual(1);
+    }
+    expect(samples.length).toBe(n);
+  });
 });

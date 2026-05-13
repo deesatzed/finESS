@@ -67,6 +67,14 @@ describe("runSimulation", () => {
       expect(result.nodeSamples[node.id].length).toBe(15000);
     }
   });
+
+  test("uses default threshold of 0.5 when graph has no threshold", () => {
+    const noThreshold = { ...PE_GRAPH, threshold: undefined };
+    const result = runSimulation(noThreshold, { numSamples: 1000, batchSize: 500, seed: 42 });
+    // pAboveThreshold should be computed using 0.5 as default
+    const manualCount = result.samples.filter((s) => s > 0.5).length / result.samples.length;
+    expect(result.pAboveThreshold).toBe(manualCount);
+  });
 });
 
 describe("runSimulationBatched", () => {
@@ -94,5 +102,21 @@ describe("runSimulationBatched", () => {
     const last5 = means.slice(-5);
     const range = Math.max(...last5) - Math.min(...last5);
     expect(range).toBeLessThan(0.01);
+  });
+
+  test("batched uses default threshold of 0.5 when graph has no threshold", () => {
+    const noThreshold = { ...PE_GRAPH, threshold: undefined };
+    const result = runSimulationBatched(noThreshold, { numSamples: 500, batchSize: 250, seed: 42 }, () => {});
+    const manualCount = result.samples.filter((s) => s > 0.5).length / result.samples.length;
+    expect(result.pAboveThreshold).toBe(manualCount);
+  });
+
+  test("batched generates random seed when none provided", () => {
+    const noSeed = { numSamples: 100, batchSize: 50 };
+    const r1 = runSimulationBatched(PE_GRAPH, noSeed, () => {});
+    const r2 = runSimulationBatched(PE_GRAPH, noSeed, () => {});
+    expect(r1.seed).toBeDefined();
+    expect(r2.seed).toBeDefined();
+    expect(r1.seed).not.toBe(r2.seed);
   });
 });
