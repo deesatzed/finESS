@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
+import { EXAMPLE_SCENARIOS } from "@/lib/examples/example-queries";
 
 interface InputBarProps {
   onSubmit: (query: string) => void;
@@ -10,6 +11,7 @@ interface InputBarProps {
 
 export function InputBar({ onSubmit, isLoading, onRunExample }: InputBarProps) {
   const [query, setQuery] = useState("");
+  const [showExamples, setShowExamples] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const handleSubmit = () => {
@@ -26,8 +28,49 @@ export function InputBar({ onSubmit, isLoading, onRunExample }: InputBarProps) {
     }
   };
 
+  const handleExampleSelect = (scenario: typeof EXAMPLE_SCENARIOS[0]) => {
+    if (scenario.id === "pe_clinical") {
+      onRunExample();
+    } else {
+      setQuery(scenario.query);
+    }
+    setShowExamples(false);
+  };
+
   return (
-    <div className="w-full px-4 py-3 bg-[#0f1629] border-t border-[#1e293b]">
+    <div className="w-full px-4 py-3 bg-[#0f1629] border-t border-[#1e293b] relative">
+      {/* Example scenarios dropdown */}
+      {showExamples && (
+        <div className="absolute bottom-full left-4 right-4 mb-1 bg-[#1e293b] rounded-lg border border-[#334155] shadow-xl max-w-4xl mx-auto overflow-hidden animate-fade-in">
+          <div className="px-3 py-2 border-b border-[#334155]">
+            <span className="text-xs text-[#64748b]">Example Scenarios</span>
+          </div>
+          {EXAMPLE_SCENARIOS.map((scenario) => (
+            <button
+              key={scenario.id}
+              onClick={() => handleExampleSelect(scenario)}
+              disabled={isLoading}
+              className="w-full text-left px-3 py-2 hover:bg-[#2d3a50] transition-colors border-b border-[#334155] last:border-b-0 disabled:opacity-40"
+            >
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#334155] text-[#94a3b8]">
+                  {scenario.domain}
+                </span>
+                <span className="text-xs text-white">{scenario.title}</span>
+                {scenario.id === "pe_clinical" && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#3b82f6]/20 text-[#3b82f6]">
+                    Instant
+                  </span>
+                )}
+              </div>
+              <p className="text-[10px] text-[#64748b] mt-1 line-clamp-1">
+                {scenario.query}
+              </p>
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="max-w-4xl mx-auto flex gap-3 items-end">
         <div className="flex-1 relative">
           <textarea
@@ -49,11 +92,11 @@ export function InputBar({ onSubmit, isLoading, onRunExample }: InputBarProps) {
           {isLoading ? "Analyzing..." : "Analyze"}
         </button>
         <button
-          onClick={onRunExample}
+          onClick={() => setShowExamples(!showExamples)}
           disabled={isLoading}
           className="px-4 py-3 bg-[#1e293b] text-[#94a3b8] rounded-lg text-sm hover:bg-[#2d3a50] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap border border-[#334155]"
         >
-          PE Demo
+          Examples
         </button>
       </div>
     </div>

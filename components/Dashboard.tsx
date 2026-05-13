@@ -11,7 +11,7 @@ interface PanelProps {
 function Panel({ title, children, className = "" }: PanelProps) {
   return (
     <div
-      className={`bg-[#0f1629] rounded-lg border border-[#1e293b] overflow-hidden flex flex-col ${className}`}
+      className={`bg-[#0f1629] rounded-lg border border-[#1e293b] overflow-hidden flex flex-col panel-hover ${className}`}
     >
       <div className="px-3 py-1.5 border-b border-[#1e293b] flex-shrink-0">
         <h3 className="text-xs font-medium text-[#64748b] uppercase tracking-wider">

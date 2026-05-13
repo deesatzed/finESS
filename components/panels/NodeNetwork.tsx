@@ -22,6 +22,7 @@ interface NodeNetworkProps {
   sensitivity: SensitivityResult[] | null;
   phase: SimulationPhase;
   progress: number;
+  onNodeClick?: (nodeId: string) => void;
 }
 
 // ---- Constants ----
@@ -271,6 +272,7 @@ export default function NodeNetwork({
   sensitivity,
   phase,
   progress,
+  onNodeClick,
 }: NodeNetworkProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -412,6 +414,22 @@ export default function NodeNetwork({
           display: "block",
           width: dimensions.w || "100%",
           height: dimensions.h || "100%",
+          cursor: graph && onNodeClick ? "pointer" : "default",
+        }}
+        onClick={(e) => {
+          if (!onNodeClick || !layoutRef.current || !canvasRef.current) return;
+          const rect = canvasRef.current.getBoundingClientRect();
+          const dpr = window.devicePixelRatio || 1;
+          const mx = (e.clientX - rect.left) * dpr;
+          const my = (e.clientY - rect.top) * dpr;
+          for (const node of layoutRef.current.nodes) {
+            const dx = mx - node.x;
+            const dy = my - node.y;
+            if (dx * dx + dy * dy < node.radius * node.radius * 4) {
+              onNodeClick(node.id);
+              return;
+            }
+          }
         }}
       />
     </div>

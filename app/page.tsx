@@ -5,6 +5,7 @@ import { Dashboard } from "@/components/Dashboard";
 import { InputBar } from "@/components/InputBar";
 import { ModelSelector } from "@/components/ModelSelector";
 import { NarrationStream } from "@/components/NarrationStream";
+import { NodeEditor } from "@/components/NodeEditor";
 import NodeNetwork from "@/components/panels/NodeNetwork";
 import LiveDistribution from "@/components/panels/LiveDistribution";
 import SensitivityRadar from "@/components/panels/SensitivityRadar";
@@ -20,6 +21,7 @@ export default function Home() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [allSamples, setAllSamples] = useState<number[]>([]);
+  const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
 
   const sim = useSimulation();
 
@@ -33,7 +35,6 @@ export default function Home() {
       samplesRef.current = [];
       setAllSamples([]);
 
-      // Start simulation with seed for demo, random for AI-generated
       sim.start(g, { seed: g === PE_EXAMPLE_GRAPH ? 42 : undefined });
     },
     [sim]
@@ -44,14 +45,12 @@ export default function Home() {
     const newSamples = [...samplesRef.current, ...sim.currentBatch.samples];
     if (newSamples.length !== samplesRef.current.length) {
       samplesRef.current = newSamples;
-      // Use a timeout to batch state updates
       if (samplesRef.current.length % 1000 < 500) {
         setTimeout(() => setAllSamples([...samplesRef.current]), 0);
       }
     }
   }
 
-  // On complete, use full result samples
   const displaySamples =
     sim.phase === "complete" && sim.result
       ? sim.result.samples
@@ -95,8 +94,19 @@ export default function Home() {
     runSimulation(PE_EXAMPLE_GRAPH);
   }, [runSimulation]);
 
+  const handleNodeClick = useCallback((nodeId: string) => {
+    setEditingNodeId(nodeId);
+  }, []);
+
+  const handleGraphUpdate = useCallback(
+    (updatedGraph: UncertaintyGraph) => {
+      runSimulation(updatedGraph);
+    },
+    [runSimulation]
+  );
+
   return (
-    <div className="h-screen flex flex-col bg-[#0a0e1a]">
+    <div className="h-screen flex flex-col bg-[#0a0e1a] relative">
       {/* Header */}
       <header className="flex items-center justify-between px-4 py-2 border-b border-[#1e293b] flex-shrink-0">
         <div className="flex items-center gap-3">
@@ -125,6 +135,7 @@ export default function Home() {
             sensitivity={sim.sensitivity}
             phase={sim.phase}
             progress={sim.progress}
+            onNodeClick={handleNodeClick}
           />
         }
         liveDistribution={
@@ -174,6 +185,16 @@ export default function Home() {
         isLoading={isAnalyzing || sim.phase === "running"}
         onRunExample={handleRunExample}
       />
+
+      {/* Node Editor Modal */}
+      {editingNodeId && graph && (
+        <NodeEditor
+          graph={graph}
+          selectedNodeId={editingNodeId}
+          onGraphUpdate={handleGraphUpdate}
+          onClose={() => setEditingNodeId(null)}
+        />
+      )}
     </div>
   );
 }
