@@ -29,7 +29,6 @@ interface EdgeGroup {
  * Returns groups ordered so that dependencies are resolved first.
  */
 export function buildEdgeGroups(graph: UncertaintyGraph): EdgeGroup[] {
-  const nodeIds = new Set(graph.nodes.map((n) => n.id));
   const groups = new Map<string, EdgeGroup>();
 
   for (const edge of graph.edges) {

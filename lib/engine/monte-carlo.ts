@@ -15,7 +15,6 @@ function sampleLeafNodes(
   graph: UncertaintyGraph,
   rand: () => number
 ): Record<string, number> {
-  const targets = new Set(graph.edges.map((e) => e.target));
   const samples: Record<string, number> = {};
 
   for (const node of graph.nodes) {

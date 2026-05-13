@@ -1,5 +1,3 @@
-import type { UncertaintyGraph } from "@/lib/types";
-
 /**
  * System prompt for the AI node generation pipeline.
  * Includes the v0.2 PE scenario as a worked example (few-shot).
