@@ -48,29 +48,35 @@ export function buildEdgeGroups(graph: UncertaintyGraph): EdgeGroup[] {
 
   // All leaf nodes (nodes that are not targets of any edge) are resolved
   const allTargets = new Set(graph.edges.map((e) => e.target));
-  for (const id of nodeIds) {
-    if (!allTargets.has(id)) resolved.add(id);
-  }
+  graph.nodes.forEach((n) => {
+    if (!allTargets.has(n.id)) resolved.add(n.id);
+  });
 
-  const remaining = new Map(groups);
+  const remainingKeys = Array.from(groups.keys());
   let iterations = 0;
-  const maxIterations = remaining.size + 1;
+  const maxIterations = remainingKeys.length + 1;
 
-  while (remaining.size > 0 && iterations < maxIterations) {
+  while (remainingKeys.length > 0 && iterations < maxIterations) {
     iterations++;
-    for (const [targetId, group] of remaining) {
-      const allSourcesResolved = group.edges.every((e) =>
+    const toRemove: number[] = [];
+    remainingKeys.forEach((targetId, idx) => {
+      const group = groups.get(targetId)!;
+      const allSourcesResolved = group.edges.every((e: { sourceId: string; method: CombinationMethod }) =>
         resolved.has(e.sourceId)
       );
       if (allSourcesResolved) {
         sorted.push(group);
         resolved.add(targetId);
-        remaining.delete(targetId);
+        toRemove.push(idx);
       }
+    });
+    // Remove resolved in reverse order to preserve indices
+    for (let i = toRemove.length - 1; i >= 0; i--) {
+      remainingKeys.splice(toRemove[i], 1);
     }
   }
 
-  if (remaining.size > 0) {
+  if (remainingKeys.length > 0) {
     throw new Error("Cycle detected in uncertainty graph");
   }
 
