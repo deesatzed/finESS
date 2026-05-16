@@ -2,7 +2,7 @@
 
 **Generated:** 2026-05-16
 **Branch:** `main`
-**Current commit:** `0f07d39790c7522733314fd2f8a3494606d9c2ae` (`0f07d39`)
+**Mitigation checkpoint commit:** `0f07d39790c7522733314fd2f8a3494606d9c2ae` (`0f07d39`)
 **Remote tracking:** `main...origin/main`; pushed and verified on GitHub.
 **Working tree:** clean for committed mitigation scope; only stale historical `HANDOFF_2026-05-15.md` remains untracked and intentionally excluded.
 
@@ -51,6 +51,7 @@ finESS is now a verified local-only, single-user beta candidate. The app keeps t
 - GitHub remote verification: `git ls-remote origin main` matched `0f07d39790c7522733314fd2f8a3494606d9c2ae`.
 - CI run: `25962996391` (`CI`, `verify`) completed successfully for `0f07d39790c7522733314fd2f8a3494606d9c2ae`: https://github.com/deesatzed/finESS/actions/runs/25962996391
 - Prior run `25962957102` failed because GitHub Actions lacked the Jest TypeScript config runtime dependency `ts-node`; `0f07d39` fixes that gap.
+- This handoff file is committed in a follow-up docs checkpoint after the green mitigation CI. Use `git log -1 --oneline` for the exact final handoff commit SHA.
 
 ## Environment State
 
