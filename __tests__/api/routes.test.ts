@@ -74,6 +74,7 @@ describe("API routes", () => {
   }, 30_000);
 
   beforeEach(async () => {
+    await prisma.auditEvent.deleteMany();
     await prisma.calibrationOutcome.deleteMany();
     await prisma.analysis.deleteMany();
     await prisma.localSession.deleteMany();
@@ -128,6 +129,17 @@ describe("API routes", () => {
       { params: { id: created.id as string } }
     );
     expect(deleted.status).toBe(200);
+
+    const auditTypes = (await prisma.auditEvent.findMany({
+      orderBy: { createdAt: "asc" },
+      select: { eventType: true, userId: true, workspaceId: true },
+    })).map((event) => event.eventType);
+    expect(auditTypes).toEqual([
+      "analysis.create",
+      "analysis.list",
+      "analysis.load",
+      "analysis.delete",
+    ]);
   });
 
   test("rejects invalid analysis payloads before writing", async () => {
@@ -419,6 +431,13 @@ describe("API routes", () => {
         }),
       })
     );
+
+    const audit = await prisma.auditEvent.findFirstOrThrow({
+      where: { eventType: "real_data.assist" },
+    });
+    expect(audit.metadataJson).toContain('"rowCount":4');
+    expect(audit.metadataJson).not.toContain("sk-or-runtime-secret");
+    expect(audit.metadataJson).not.toContain("Observed CSV");
   });
 
   test("real-data assist reports missing keys without echoing secrets", async () => {
@@ -450,6 +469,11 @@ describe("API routes", () => {
         message: "Provide a session API key or configure OPENROUTER_API_KEY locally.",
       },
     });
+    const audit = await prisma.auditEvent.findFirstOrThrow({
+      where: { eventType: "real_data.assist_denied" },
+    });
+    expect(audit.metadataJson).toContain("missing_api_key");
+    expect(audit.metadataJson).not.toContain("OPENROUTER_API_KEY");
   });
 
   test("denies unauthenticated analysis and calibration access", async () => {
@@ -469,6 +493,11 @@ describe("API routes", () => {
     expect(list.status).toBe(401);
     expect(save.status).toBe(401);
     expect(calibration.status).toBe(401);
+    expect(await prisma.auditEvent.count({
+      where: {
+        eventType: { in: ["analysis.access_denied", "calibration.access_denied"] },
+      },
+    })).toBe(3);
   });
 
   test("scopes analysis reads and deletes by workspace owner", async () => {
@@ -507,6 +536,9 @@ describe("API routes", () => {
     expect(ownerALoad.status).toBe(200);
     expect(ownerALoadBody.userId).toBe(ownerA.userId);
     expect(ownerALoadBody.workspaceId).toBe(ownerA.workspaceId);
+    expect(await prisma.auditEvent.count({
+      where: { eventType: "analysis.access_denied", userId: ownerB.userId },
+    })).toBe(2);
   });
 
   test("scopes calibration writes and curves by workspace owner", async () => {
@@ -545,5 +577,8 @@ describe("API routes", () => {
     const ownerBCurveBody = await readJson(ownerBCurve);
     expect(ownerBCurve.status).toBe(200);
     expect(ownerBCurveBody.count).toBe(0);
+    expect(await prisma.auditEvent.count({
+      where: { eventType: "calibration.access_denied", userId: ownerB.userId },
+    })).toBe(1);
   });
 });

@@ -61,6 +61,7 @@ describe("single-user beta workflow", () => {
   }, 30_000);
 
   beforeEach(async () => {
+    await prisma.auditEvent.deleteMany();
     await prisma.calibrationOutcome.deleteMany();
     await prisma.analysis.deleteMany();
     await prisma.localSession.deleteMany();

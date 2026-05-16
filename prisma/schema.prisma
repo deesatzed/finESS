@@ -86,3 +86,19 @@ model LocalSession {
   @@index([userId])
   @@index([workspaceId])
 }
+
+model AuditEvent {
+  id           String   @id @default(cuid())
+  userId       String?
+  workspaceId  String?
+  sessionId    String?
+  eventType    String
+  subjectType  String?
+  subjectId    String?
+  metadataJson String?
+  createdAt    DateTime @default(now())
+
+  @@index([userId, workspaceId, createdAt])
+  @@index([eventType, createdAt])
+  @@index([subjectType, subjectId])
+}

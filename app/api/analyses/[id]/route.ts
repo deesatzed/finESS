@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { apiError } from "@/lib/api/errors";
 import { getAuthenticatedContext } from "@/lib/auth/local-session";
+import { recordAuditEvent } from "@/lib/audit/events";
 
 // GET /api/analyses/:id — load a single analysis
 export async function GET(
@@ -10,7 +11,15 @@ export async function GET(
 ) {
   try {
     const auth = await getAuthenticatedContext(request);
-    if (!auth) return apiError("UNAUTHENTICATED", "Authentication required", 401);
+    if (!auth) {
+      await recordAuditEvent({
+        type: "analysis.access_denied",
+        subjectType: "analysis",
+        subjectId: params.id,
+        metadata: { route: "/api/analyses/[id]", method: "GET", reason: "missing_identity" },
+      });
+      return apiError("UNAUTHENTICATED", "Authentication required", 401);
+    }
 
     const analysis = await prisma.analysis.findFirst({
       where: {
@@ -21,8 +30,23 @@ export async function GET(
     });
 
     if (!analysis) {
+      await recordAuditEvent({
+        type: "analysis.access_denied",
+        auth,
+        subjectType: "analysis",
+        subjectId: params.id,
+        metadata: { route: "/api/analyses/[id]", method: "GET", reason: "not_found_or_cross_owner" },
+      });
       return apiError("NOT_FOUND", "Analysis not found", 404);
     }
+
+    await recordAuditEvent({
+      type: "analysis.load",
+      auth,
+      subjectType: "analysis",
+      subjectId: analysis.id,
+      metadata: { hasResult: Boolean(analysis.resultJson), hasSeed: analysis.seed !== null },
+    });
 
     return NextResponse.json({
       id: analysis.id,
@@ -49,7 +73,15 @@ export async function DELETE(
 ) {
   try {
     const auth = await getAuthenticatedContext(request);
-    if (!auth) return apiError("UNAUTHENTICATED", "Authentication required", 401);
+    if (!auth) {
+      await recordAuditEvent({
+        type: "analysis.access_denied",
+        subjectType: "analysis",
+        subjectId: params.id,
+        metadata: { route: "/api/analyses/[id]", method: "DELETE", reason: "missing_identity" },
+      });
+      return apiError("UNAUTHENTICATED", "Authentication required", 401);
+    }
 
     const analysis = await prisma.analysis.findFirst({
       where: {
@@ -60,11 +92,25 @@ export async function DELETE(
     });
 
     if (!analysis) {
+      await recordAuditEvent({
+        type: "analysis.access_denied",
+        auth,
+        subjectType: "analysis",
+        subjectId: params.id,
+        metadata: { route: "/api/analyses/[id]", method: "DELETE", reason: "not_found_or_cross_owner" },
+      });
       return apiError("NOT_FOUND", "Analysis not found", 404);
     }
 
     await prisma.analysis.delete({
       where: { id: params.id },
+    });
+
+    await recordAuditEvent({
+      type: "analysis.delete",
+      auth,
+      subjectType: "analysis",
+      subjectId: params.id,
     });
 
     return NextResponse.json({ success: true });

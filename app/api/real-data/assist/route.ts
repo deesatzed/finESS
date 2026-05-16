@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { apiError, readJsonBody } from "@/lib/api/errors";
+import { recordAuditEvent } from "@/lib/audit/events";
 import {
   buildRealDataAssistMessages,
   parseRealDataInsight,
@@ -33,6 +34,16 @@ export async function POST(request: NextRequest) {
 
     const apiKey = assistRequest.apiKey ?? process.env.OPENROUTER_API_KEY?.trim();
     if (!apiKey) {
+      await recordAuditEvent({
+        type: "real_data.assist_denied",
+        metadata: {
+          reason: "missing_api_key",
+          model: assistRequest.model,
+          rowCount: assistRequest.rowCount,
+          missingCount: assistRequest.missingCount,
+          hasThreshold: assistRequest.threshold !== null,
+        },
+      });
       return apiError(
         "MISSING_API_KEY",
         "Provide a session API key or configure OPENROUTER_API_KEY locally.",
@@ -61,6 +72,17 @@ export async function POST(request: NextRequest) {
     });
 
     if (!response.ok) {
+      await recordAuditEvent({
+        type: "real_data.assist_denied",
+        metadata: {
+          reason: "upstream_error",
+          upstreamStatus: response.status,
+          model: assistRequest.model,
+          rowCount: assistRequest.rowCount,
+          missingCount: assistRequest.missingCount,
+          hasThreshold: assistRequest.threshold !== null,
+        },
+      });
       return apiError(
         "UPSTREAM_ERROR",
         `AI provider request failed with status ${response.status}.`,
@@ -74,7 +96,18 @@ export async function POST(request: NextRequest) {
       return apiError("UPSTREAM_EMPTY_RESPONSE", "AI provider returned no content.", 502);
     }
 
-    return NextResponse.json({ insight: parseRealDataInsight(content) });
+    const insight = parseRealDataInsight(content);
+    await recordAuditEvent({
+      type: "real_data.assist",
+      metadata: {
+        model: assistRequest.model,
+        rowCount: assistRequest.rowCount,
+        missingCount: assistRequest.missingCount,
+        hasThreshold: assistRequest.threshold !== null,
+      },
+    });
+
+    return NextResponse.json({ insight });
   } catch (error) {
     if (error instanceof RealDataAssistError) {
       return apiError("VALIDATION_ERROR", error.message, 400);

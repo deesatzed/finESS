@@ -23,6 +23,7 @@ jobs:
           printf 'OPENROUTER_API_KEY=\n' > .env.local
 
       - run: npm run check:env
+      - run: npm run smoke:openrouter
       - run: npx prisma generate
       - run: npx prisma db push
       - run: npm test -- --runInBand

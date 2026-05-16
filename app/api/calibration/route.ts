@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { apiError, readJsonBody, validationError } from "@/lib/api/errors";
 import { getAuthenticatedContext } from "@/lib/auth/local-session";
+import { recordAuditEvent } from "@/lib/audit/events";
 import { validateCalibrationOutcomeRequest } from "@/lib/validation/schemas";
 
 const MIN_OUTCOMES_FOR_CURVE = 20;
@@ -10,7 +11,13 @@ const MIN_OUTCOMES_FOR_CURVE = 20;
 export async function GET(request: NextRequest) {
   try {
     const auth = await getAuthenticatedContext(request);
-    if (!auth) return apiError("UNAUTHENTICATED", "Authentication required", 401);
+    if (!auth) {
+      await recordAuditEvent({
+        type: "calibration.access_denied",
+        metadata: { route: "/api/calibration", method: "GET", reason: "missing_identity" },
+      });
+      return apiError("UNAUTHENTICATED", "Authentication required", 401);
+    }
 
     const outcomes = await prisma.calibrationOutcome.findMany({
       where: {
@@ -21,6 +28,11 @@ export async function GET(request: NextRequest) {
     });
 
     if (outcomes.length < MIN_OUTCOMES_FOR_CURVE) {
+      await recordAuditEvent({
+        type: "calibration.read",
+        auth,
+        metadata: { count: outcomes.length, ready: false },
+      });
       return NextResponse.json({
         ready: false,
         count: outcomes.length,
@@ -56,6 +68,12 @@ export async function GET(request: NextRequest) {
         count: b.count,
       }));
 
+    await recordAuditEvent({
+      type: "calibration.read",
+      auth,
+      metadata: { count: outcomes.length, ready: true, binCount: calibrationCurve.length },
+    });
+
     return NextResponse.json({
       ready: true,
       count: outcomes.length,
@@ -70,7 +88,13 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const auth = await getAuthenticatedContext(request);
-    if (!auth) return apiError("UNAUTHENTICATED", "Authentication required", 401);
+    if (!auth) {
+      await recordAuditEvent({
+        type: "calibration.access_denied",
+        metadata: { route: "/api/calibration", method: "POST", reason: "missing_identity" },
+      });
+      return apiError("UNAUTHENTICATED", "Authentication required", 401);
+    }
 
     const { analysisId, predictedProbability, actualOutcome } =
       validateCalibrationOutcomeRequest(await readJsonBody(request));
@@ -85,6 +109,13 @@ export async function POST(request: NextRequest) {
     });
 
     if (!analysis) {
+      await recordAuditEvent({
+        type: "calibration.access_denied",
+        auth,
+        subjectType: "analysis",
+        subjectId: analysisId,
+        metadata: { route: "/api/calibration", method: "POST", reason: "analysis_not_found_or_cross_owner" },
+      });
       return apiError("NOT_FOUND", "Analysis not found", 404);
     }
 
@@ -92,6 +123,18 @@ export async function POST(request: NextRequest) {
       data: {
         userId: auth.userId,
         workspaceId: auth.workspaceId,
+        analysisId,
+        predictedProbability,
+        actualOutcome,
+      },
+    });
+
+    await recordAuditEvent({
+      type: "calibration.record",
+      auth,
+      subjectType: "calibrationOutcome",
+      subjectId: outcome.id,
+      metadata: {
         analysisId,
         predictedProbability,
         actualOutcome,

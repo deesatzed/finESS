@@ -2,13 +2,20 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { apiError, readJsonBody, validationError } from "@/lib/api/errors";
 import { getAuthenticatedContext } from "@/lib/auth/local-session";
+import { recordAuditEvent } from "@/lib/audit/events";
 import { validateAnalysisSaveRequest } from "@/lib/validation/schemas";
 
 // GET /api/analyses — list all saved analyses
 export async function GET(request: NextRequest) {
   try {
     const auth = await getAuthenticatedContext(request);
-    if (!auth) return apiError("UNAUTHENTICATED", "Authentication required", 401);
+    if (!auth) {
+      await recordAuditEvent({
+        type: "analysis.access_denied",
+        metadata: { route: "/api/analyses", method: "GET", reason: "missing_identity" },
+      });
+      return apiError("UNAUTHENTICATED", "Authentication required", 401);
+    }
 
     const analyses = await prisma.analysis.findMany({
       where: {
@@ -26,6 +33,12 @@ export async function GET(request: NextRequest) {
       },
     });
 
+    await recordAuditEvent({
+      type: "analysis.list",
+      auth,
+      metadata: { count: analyses.length },
+    });
+
     return NextResponse.json({ analyses });
   } catch {
     return apiError("DATABASE_ERROR", "Failed to list analyses", 500);
@@ -36,7 +49,13 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const auth = await getAuthenticatedContext(request);
-    if (!auth) return apiError("UNAUTHENTICATED", "Authentication required", 401);
+    if (!auth) {
+      await recordAuditEvent({
+        type: "analysis.access_denied",
+        metadata: { route: "/api/analyses", method: "POST", reason: "missing_identity" },
+      });
+      return apiError("UNAUTHENTICATED", "Authentication required", 401);
+    }
 
     const { query, graph, result, sensitivity, seed } =
       validateAnalysisSaveRequest(await readJsonBody(request));
@@ -50,6 +69,19 @@ export async function POST(request: NextRequest) {
         resultJson: result ? JSON.stringify(result) : null,
         sensitivityJson: sensitivity ? JSON.stringify(sensitivity) : null,
         seed: seed ?? null,
+      },
+    });
+
+    await recordAuditEvent({
+      type: "analysis.create",
+      auth,
+      subjectType: "analysis",
+      subjectId: analysis.id,
+      metadata: {
+        analysisMode: graph.analysisMode ?? "simulation",
+        hasResult: Boolean(result),
+        sensitivityCount: sensitivity?.length ?? 0,
+        hasSeed: seed !== null && seed !== undefined,
       },
     });
 
