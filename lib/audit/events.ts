@@ -41,9 +41,27 @@ export async function recordAuditEvent({
   });
 }
 
+export const FORBIDDEN_AUDIT_METADATA_KEYS = new Set([
+  "apiKey",
+  "api_key",
+  "OPENROUTER_API_KEY",
+  "authorization",
+  "cookie",
+  "sessionToken",
+  "session_token",
+  "rawRows",
+  "csvRows",
+  "rows",
+  "query",
+  "prompt",
+  "freeText",
+]);
+
 function sanitizeMetadata(metadata: Record<string, unknown>) {
   return Object.fromEntries(
-    Object.entries(metadata).map(([key, value]) => [key, sanitizeValue(value)])
+    Object.entries(metadata)
+      .filter(([key]) => !FORBIDDEN_AUDIT_METADATA_KEYS.has(key))
+      .map(([key, value]) => [key, sanitizeValue(value)])
   );
 }
 

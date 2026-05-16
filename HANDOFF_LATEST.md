@@ -3,7 +3,7 @@
 **Generated:** 2026-05-16
 **Branch:** `main`
 **Commit provenance:** this handoff is part of the final true-preprod readiness commit on `main`; verify the exact commit with `git rev-parse HEAD` after checkout. The exact pushed hash is also reported in the completion summary.
-**Working tree:** clean except for stale historical `HANDOFF_2026-05-15.md`, which remains untracked and intentionally preserved.
+**Working tree:** clean.
 **Status:** conditional local pre-production beta. Local proofs pass; live OpenRouter provider smoke remains blocked by missing credentials.
 
 ## Current Product State
