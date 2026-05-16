@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { apiError } from "@/lib/api/errors";
 
 // GET /api/analyses/:id — load a single analysis
 export async function GET(
@@ -12,10 +13,7 @@ export async function GET(
     });
 
     if (!analysis) {
-      return NextResponse.json(
-        { error: "Analysis not found" },
-        { status: 404 }
-      );
+      return apiError("NOT_FOUND", "Analysis not found", 404);
     }
 
     return NextResponse.json({
@@ -29,11 +27,8 @@ export async function GET(
       seed: analysis.seed,
       createdAt: analysis.createdAt,
     });
-  } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to load analysis" },
-      { status: 500 }
-    );
+  } catch {
+    return apiError("DATABASE_ERROR", "Failed to load analysis", 500);
   }
 }
 
@@ -43,15 +38,20 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
+    const analysis = await prisma.analysis.findUnique({
+      where: { id: params.id },
+    });
+
+    if (!analysis) {
+      return apiError("NOT_FOUND", "Analysis not found", 404);
+    }
+
     await prisma.analysis.delete({
       where: { id: params.id },
     });
 
     return NextResponse.json({ success: true });
-  } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to delete analysis" },
-      { status: 500 }
-    );
+  } catch {
+    return apiError("DATABASE_ERROR", "Failed to delete analysis", 500);
   }
 }

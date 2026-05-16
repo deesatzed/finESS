@@ -1,18 +1,22 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 interface ModelSelectorProps {
   selectedModel: string;
   onModelChange: (model: string) => void;
 }
 
-const SUGGESTED_MODELS = [
-  { id: "anthropic/claude-sonnet-4", label: "Claude Sonnet 4" },
-  { id: "openai/gpt-4o", label: "GPT-4o" },
-  { id: "google/gemini-2.5-pro", label: "Gemini 2.5 Pro" },
-  { id: "anthropic/claude-haiku-3.5", label: "Claude Haiku 3.5" },
-];
+interface ModelOption {
+  id: string;
+  label: string;
+}
+
+interface ModelConfigResponse {
+  models: ModelOption[];
+  defaultModel: string;
+  hasApiKey: boolean;
+}
 
 export function ModelSelector({
   selectedModel,
@@ -20,10 +24,51 @@ export function ModelSelector({
 }: ModelSelectorProps) {
   const [isCustom, setIsCustom] = useState(false);
   const [customModel, setCustomModel] = useState("");
+  const [models, setModels] = useState<ModelOption[]>([]);
+  const [hasApiKey, setHasApiKey] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadModels() {
+      try {
+        const response = await fetch("/api/models");
+        if (!response.ok) {
+          throw new Error(`Model config failed (${response.status})`);
+        }
+        const data = (await response.json()) as ModelConfigResponse;
+        if (cancelled) return;
+
+        setModels(data.models ?? []);
+        setHasApiKey(Boolean(data.hasApiKey));
+        if (!selectedModel && data.defaultModel) {
+          onModelChange(data.defaultModel);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setLoadError(
+            error instanceof Error ? error.message : "Failed to load model config"
+          );
+        }
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    }
+
+    loadModels();
+    return () => {
+      cancelled = true;
+    };
+  }, [onModelChange, selectedModel]);
 
   return (
-    <div className="flex items-center gap-2 px-4 py-2 bg-[#0f1629] border-b border-[#1e293b]">
-      <span className="text-xs text-[#64748b]">Model:</span>
+    <div className="flex flex-col gap-1 px-4 py-2 bg-[#0f1629] border-b border-[#1e293b] sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex items-center gap-2">
+        <span className="text-xs font-medium uppercase tracking-wider text-[#64748b]">
+          AI setup
+        </span>
       {!isCustom ? (
         <select
           value={selectedModel}
@@ -36,8 +81,10 @@ export function ModelSelector({
           }}
           className="bg-[#1e293b] text-[#e2e8f0] text-xs rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-[#3b82f6] border border-[#334155]"
         >
-          <option value="">Select a model...</option>
-          {SUGGESTED_MODELS.map((m) => (
+          <option value="">
+            {isLoading ? "Loading models..." : "Select a model..."}
+          </option>
+          {models.map((m) => (
             <option key={m.id} value={m.id}>
               {m.label}
             </option>
@@ -79,6 +126,14 @@ export function ModelSelector({
           </button>
         </div>
       )}
+      </div>
+      <span className="text-xs text-[#64748b]">
+        {loadError
+          ? loadError
+          : hasApiKey
+            ? "Models are loaded from local env. Instant demo needs no model."
+            : "Add OPENROUTER_API_KEY in local env for custom AI questions."}
+      </span>
     </div>
   );
 }

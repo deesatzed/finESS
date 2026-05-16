@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { apiError, readJsonBody, validationError } from "@/lib/api/errors";
+import { validateAnalysisSaveRequest } from "@/lib/validation/schemas";
 
 // GET /api/analyses — list all saved analyses
 export async function GET() {
@@ -15,26 +17,16 @@ export async function GET() {
     });
 
     return NextResponse.json({ analyses });
-  } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to list analyses" },
-      { status: 500 }
-    );
+  } catch {
+    return apiError("DATABASE_ERROR", "Failed to list analyses", 500);
   }
 }
 
 // POST /api/analyses — save a new analysis
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { query, graph, result, sensitivity, seed } = body;
-
-    if (!query || !graph) {
-      return NextResponse.json(
-        { error: "Missing required fields: query, graph" },
-        { status: 400 }
-      );
-    }
+    const { query, graph, result, sensitivity, seed } =
+      validateAnalysisSaveRequest(await readJsonBody(request));
 
     const analysis = await prisma.analysis.create({
       data: {
@@ -48,9 +40,8 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ id: analysis.id }, { status: 201 });
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to save analysis" },
-      { status: 500 }
-    );
+    const validation = validationError(error);
+    if (validation) return validation;
+    return apiError("DATABASE_ERROR", "Failed to save analysis", 500);
   }
 }

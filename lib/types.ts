@@ -10,8 +10,7 @@ export type CombinationMethod =
   | "additive"
   | "subtractive"
   | "bayesian_update"
-  | "multiplicative"
-  | "custom";
+  | "multiplicative";
 
 /** A single uncertainty node in the graph */
 export interface UncertaintyNode {

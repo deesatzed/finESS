@@ -7,12 +7,19 @@ interface InputBarProps {
   onSubmit: (query: string) => void;
   isLoading: boolean;
   onRunExample: () => void;
+  inputRef?: React.RefObject<HTMLTextAreaElement>;
 }
 
-export function InputBar({ onSubmit, isLoading, onRunExample }: InputBarProps) {
+export function InputBar({
+  onSubmit,
+  isLoading,
+  onRunExample,
+  inputRef,
+}: InputBarProps) {
   const [query, setQuery] = useState("");
   const [showExamples, setShowExamples] = useState(false);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const localTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const textareaRef = inputRef ?? localTextareaRef;
 
   const handleSubmit = () => {
     const trimmed = query.trim();
@@ -41,7 +48,7 @@ export function InputBar({ onSubmit, isLoading, onRunExample }: InputBarProps) {
     <div className="w-full px-4 py-3 bg-[#0f1629] border-t border-[#1e293b] relative">
       {/* Example scenarios dropdown */}
       {showExamples && (
-        <div className="absolute bottom-full left-4 right-4 mb-1 bg-[#1e293b] rounded-lg border border-[#334155] shadow-xl max-w-4xl mx-auto overflow-hidden animate-fade-in">
+        <div className="absolute z-50 bottom-full left-4 right-4 mb-1 bg-[#1e293b] rounded-lg border border-[#334155] shadow-xl max-w-4xl mx-auto overflow-hidden animate-fade-in">
           <div className="px-3 py-2 border-b border-[#334155]">
             <span className="text-xs text-[#64748b]">Example Scenarios</span>
           </div>

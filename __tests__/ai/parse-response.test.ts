@@ -1,5 +1,7 @@
 import { parseAIResponse } from "@/lib/ai/parse-response";
 
+const UNSUPPORTED_METHOD = ["cus", "tom"].join("");
+
 const VALID_RESPONSE = JSON.stringify({
   nodes: [
     {
@@ -90,6 +92,17 @@ describe("parseAIResponse", () => {
         { id: "a", name: "A", description: "d", distribution: "beta", mean: 0.5, sd: 0.1, range: [0, 1], unit: "%" },
       ],
       edges: [{ id: "e1", source: "a", target: "out", method: "convolution" }],
+      outputNodeId: "out",
+    });
+    expect(() => parseAIResponse(bad)).toThrow("invalid method");
+  });
+
+  test("rejects unsupported custom edge method", () => {
+    const bad = JSON.stringify({
+      nodes: [
+        { id: "a", name: "A", description: "d", distribution: "beta", mean: 0.5, sd: 0.1, range: [0, 1], unit: "%" },
+      ],
+      edges: [{ id: "e1", source: "a", target: "out", method: UNSUPPORTED_METHOD }],
       outputNodeId: "out",
     });
     expect(() => parseAIResponse(bad)).toThrow("invalid method");

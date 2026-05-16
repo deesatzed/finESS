@@ -5,7 +5,6 @@ const VALID_METHODS: CombinationMethod[] = [
   "subtractive",
   "bayesian_update",
   "multiplicative",
-  "custom",
 ];
 
 const VALID_DISTRIBUTIONS = ["beta", "normal", "uniform", "lognormal"];

@@ -24,6 +24,13 @@ interface EdgeGroup {
   edges: { sourceId: string; method: CombinationMethod }[];
 }
 
+const SUPPORTED_METHODS: ReadonlySet<string> = new Set([
+  "additive",
+  "subtractive",
+  "bayesian_update",
+  "multiplicative",
+]);
+
 /**
  * Build a topological ordering of edge groups.
  * Returns groups ordered so that dependencies are resolved first.
@@ -103,6 +110,11 @@ export function executeDAGSample(
 
     // Determine the primary method for this group
     const methods = new Set(edges.map((e) => e.method));
+    for (const method of methods) {
+      if (!SUPPORTED_METHODS.has(method)) {
+        throw new Error(`Unsupported edge method: ${method}`);
+      }
+    }
 
     if (methods.has("bayesian_update")) {
       // Bayesian update: needs pre-test, sensitivity, specificity

@@ -20,6 +20,12 @@
 .DS_Store
 *.pem
 
+# local reference prototypes kept out of the app root status
+/distribclin_demo.html
+/distribclin_expert_system_demo2.html
+/hometier-app.html
+/hometier-app2.html
+
 # debug
 npm-debug.log*
 yarn-debug.log*

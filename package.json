@@ -6,8 +6,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "check:env": "node scripts/check-env.mjs",
     "lint": "next lint",
     "test": "jest",
+    "test:e2e": "jest --runInBand __tests__/e2e",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage"
   },

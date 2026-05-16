@@ -1,11 +1,15 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useMemo, useRef } from "react";
+import { AnalysisStatusStrip } from "@/components/AnalysisStatusStrip";
 import { Dashboard } from "@/components/Dashboard";
 import { InputBar } from "@/components/InputBar";
 import { ModelSelector } from "@/components/ModelSelector";
 import { NarrationStream } from "@/components/NarrationStream";
 import { NodeEditor } from "@/components/NodeEditor";
+import { SaveLoadModal } from "@/components/SaveLoadModal";
+import CalibrationModal from "@/components/CalibrationModal";
+import { FirstRunPanel } from "@/components/FirstRunPanel";
 import NodeNetwork from "@/components/panels/NodeNetwork";
 import LiveDistribution from "@/components/panels/LiveDistribution";
 import SensitivityRadar from "@/components/panels/SensitivityRadar";
@@ -13,7 +17,28 @@ import GaugePanel from "@/components/panels/GaugePanel";
 import SpectrumBars from "@/components/panels/SpectrumBars";
 import { useSimulation } from "@/lib/engine/use-simulation";
 import { PE_EXAMPLE_GRAPH } from "@/lib/examples/pe-scenario";
-import type { UncertaintyGraph } from "@/lib/types";
+import { getAnalysisStatus } from "@/lib/ui/analysis-status";
+import type { UncertaintyGraph, SimulationResult, SensitivityResult } from "@/lib/types";
+
+function getApiErrorMessage(data: unknown, fallback: string) {
+  if (
+    typeof data === "object" &&
+    data !== null &&
+    "error" in data
+  ) {
+    const error = (data as { error?: unknown }).error;
+    if (typeof error === "string") return error;
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "message" in error &&
+      typeof (error as { message?: unknown }).message === "string"
+    ) {
+      return (error as { message: string }).message;
+    }
+  }
+  return fallback;
+}
 
 export default function Home() {
   const [model, setModel] = useState("");
@@ -22,6 +47,12 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [allSamples, setAllSamples] = useState<number[]>([]);
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
+  const [currentQuery, setCurrentQuery] = useState<string | null>(null);
+  const [showSaveLoad, setShowSaveLoad] = useState(false);
+  const [showCalibration, setShowCalibration] = useState(false);
+  const [savedAnalysisId, setSavedAnalysisId] = useState<string | null>(null);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const sim = useSimulation();
 
@@ -29,13 +60,19 @@ export default function Home() {
   const samplesRef = useRef<number[]>([]);
 
   const runSimulation = useCallback(
-    (g: UncertaintyGraph) => {
+    (
+      g: UncertaintyGraph,
+      options: { seed?: number | null; markUnsaved?: boolean } = {}
+    ) => {
       setGraph(g);
       setError(null);
+      setHasUnsavedChanges(options.markUnsaved ?? true);
       samplesRef.current = [];
       setAllSamples([]);
 
-      sim.start(g, { seed: g === PE_EXAMPLE_GRAPH ? 42 : undefined });
+      sim.start(g, {
+        seed: options.seed ?? (g === PE_EXAMPLE_GRAPH ? 42 : undefined),
+      });
     },
     [sim]
   );
@@ -56,15 +93,29 @@ export default function Home() {
       ? sim.result.samples
       : allSamples;
 
+  const analysisStatus = useMemo(
+    () =>
+      getAnalysisStatus({
+        hasGraph: graph !== null,
+        hasResult: sim.result !== null,
+        phase: sim.phase,
+        savedAnalysisId,
+        hasUnsavedChanges,
+      }),
+    [graph, sim.result, sim.phase, savedAnalysisId, hasUnsavedChanges]
+  );
+
   const handleSubmit = useCallback(
     async (query: string) => {
       if (!model) {
-        setError("Please select an AI model first.");
+        setError("Select a model in AI setup before running a custom question.");
         return;
       }
 
       setIsAnalyzing(true);
       setError(null);
+      setCurrentQuery(query);
+      setSavedAnalysisId(null);
 
       try {
         const res = await fetch("/api/analyze", {
@@ -76,7 +127,7 @@ export default function Home() {
         const data = await res.json();
 
         if (!res.ok) {
-          setError(data.error || "Analysis failed");
+          setError(getApiErrorMessage(data, "Analysis failed"));
           return;
         }
 
@@ -91,15 +142,45 @@ export default function Home() {
   );
 
   const handleRunExample = useCallback(() => {
-    runSimulation(PE_EXAMPLE_GRAPH);
+      setCurrentQuery("PE clinical scenario (pre-built demo)");
+      setSavedAnalysisId(null);
+      setHasUnsavedChanges(true);
+      runSimulation(PE_EXAMPLE_GRAPH);
   }, [runSimulation]);
+
+  const handleFocusInput = useCallback(() => {
+    inputRef.current?.focus();
+  }, []);
 
   const handleNodeClick = useCallback((nodeId: string) => {
     setEditingNodeId(nodeId);
   }, []);
 
+  const handleLoad = useCallback(
+    (data: {
+      query: string;
+      graph: UncertaintyGraph;
+      result: SimulationResult | null;
+      sensitivity: SensitivityResult[] | null;
+      seed: number | null;
+      id: string;
+    }) => {
+      setCurrentQuery(data.query);
+      setSavedAnalysisId(data.id);
+      setHasUnsavedChanges(false);
+      if (data.result) {
+        setAllSamples(data.result.samples);
+        samplesRef.current = data.result.samples;
+      }
+      // Run the simulation fresh with the loaded graph
+      runSimulation(data.graph, { seed: data.seed, markUnsaved: false });
+    },
+    [runSimulation]
+  );
+
   const handleGraphUpdate = useCallback(
     (updatedGraph: UncertaintyGraph) => {
+      setHasUnsavedChanges(true);
       runSimulation(updatedGraph);
     },
     [runSimulation]
@@ -127,16 +208,33 @@ export default function Home() {
       {/* Model Selector */}
       <ModelSelector selectedModel={model} onModelChange={setModel} />
 
+      <AnalysisStatusStrip
+        status={analysisStatus}
+        query={currentQuery}
+        seed={sim.result?.seed ?? null}
+        onSaveLoad={() => setShowSaveLoad(true)}
+        onCalibration={() => {
+          if (analysisStatus.canCalibrate) setShowCalibration(true);
+        }}
+      />
+
       {/* Dashboard */}
       <Dashboard
         nodeNetwork={
-          <NodeNetwork
-            graph={graph}
-            sensitivity={sim.sensitivity}
-            phase={sim.phase}
-            progress={sim.progress}
-            onNodeClick={handleNodeClick}
-          />
+          graph === null && sim.phase === "idle" ? (
+            <FirstRunPanel
+              onRunExample={handleRunExample}
+              onFocusInput={handleFocusInput}
+            />
+          ) : (
+            <NodeNetwork
+              graph={graph}
+              sensitivity={sim.sensitivity}
+              phase={sim.phase}
+              progress={sim.progress}
+              onNodeClick={handleNodeClick}
+            />
+          )
         }
         liveDistribution={
           <LiveDistribution
@@ -184,6 +282,7 @@ export default function Home() {
         onSubmit={handleSubmit}
         isLoading={isAnalyzing || sim.phase === "running"}
         onRunExample={handleRunExample}
+        inputRef={inputRef}
       />
 
       {/* Node Editor Modal */}
@@ -195,6 +294,29 @@ export default function Home() {
           onClose={() => setEditingNodeId(null)}
         />
       )}
+
+      {/* Save/Load Modal */}
+      <SaveLoadModal
+        isOpen={showSaveLoad}
+        onClose={() => setShowSaveLoad(false)}
+        query={currentQuery}
+        graph={graph}
+        result={sim.result}
+        sensitivity={sim.sensitivity}
+        onLoad={handleLoad}
+        onSave={(id) => {
+          setSavedAnalysisId(id);
+          setHasUnsavedChanges(false);
+        }}
+      />
+
+      {/* Calibration Modal */}
+      <CalibrationModal
+        isOpen={showCalibration}
+        onClose={() => setShowCalibration(false)}
+        analysisId={savedAnalysisId}
+        predictedProbability={sim.result?.pAboveThreshold ?? null}
+      />
     </div>
   );
 }

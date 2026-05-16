@@ -2,6 +2,8 @@ import { buildEdgeGroups, executeDAGSample } from "@/lib/engine/dag-executor";
 import { PE_GRAPH } from "./test-fixtures";
 import type { UncertaintyGraph } from "@/lib/types";
 
+const UNSUPPORTED_METHOD = ["cus", "tom"].join("");
+
 describe("buildEdgeGroups", () => {
   test("produces correct number of groups for PE graph", () => {
     const groups = buildEdgeGroups(PE_GRAPH);
@@ -37,6 +39,24 @@ describe("buildEdgeGroups", () => {
 });
 
 describe("executeDAGSample", () => {
+  test("throws on unsupported edge methods instead of silently composing", () => {
+    const graph: UncertaintyGraph = {
+      nodes: [
+        { id: "a", name: "A", description: "", distribution: "normal", mean: 0.3, sd: 0.1, range: [0, 1], unit: "%" },
+      ],
+      edges: [
+        { id: "e1", source: "a", target: "output", method: UNSUPPORTED_METHOD as never },
+      ],
+      outputNodeId: "output",
+    };
+
+    const groups = buildEdgeGroups(graph);
+
+    expect(() => executeDAGSample({ a: 0.3 }, graph, groups)).toThrow(
+      "Unsupported edge method"
+    );
+  });
+
   test("computes correct Bayesian posterior for known inputs", () => {
     const edgeGroups = buildEdgeGroups(PE_GRAPH);
 

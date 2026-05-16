@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { apiError, readJsonBody, validationError } from "@/lib/api/errors";
+import { validateCalibrationOutcomeRequest } from "@/lib/validation/schemas";
 
 const MIN_OUTCOMES_FOR_CURVE = 20;
 
@@ -51,29 +53,16 @@ export async function GET() {
       count: outcomes.length,
       calibrationCurve,
     });
-  } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to get calibration data" },
-      { status: 500 }
-    );
+  } catch {
+    return apiError("DATABASE_ERROR", "Failed to get calibration data", 500);
   }
 }
 
 // POST /api/calibration — record a real outcome
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { analysisId, predictedProbability, actualOutcome } = body;
-
-    if (!analysisId || typeof predictedProbability !== "number" || typeof actualOutcome !== "boolean") {
-      return NextResponse.json(
-        {
-          error:
-            "Missing required fields: analysisId (string), predictedProbability (number), actualOutcome (boolean)",
-        },
-        { status: 400 }
-      );
-    }
+    const { analysisId, predictedProbability, actualOutcome } =
+      validateCalibrationOutcomeRequest(await readJsonBody(request));
 
     // Verify the analysis exists
     const analysis = await prisma.analysis.findUnique({
@@ -81,10 +70,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (!analysis) {
-      return NextResponse.json(
-        { error: "Analysis not found" },
-        { status: 404 }
-      );
+      return apiError("NOT_FOUND", "Analysis not found", 404);
     }
 
     const outcome = await prisma.calibrationOutcome.create({
@@ -97,9 +83,8 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ id: outcome.id }, { status: 201 });
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to record outcome" },
-      { status: 500 }
-    );
+    const validation = validationError(error);
+    if (validation) return validation;
+    return apiError("DATABASE_ERROR", "Failed to record outcome", 500);
   }
 }
