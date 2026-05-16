@@ -6,14 +6,17 @@
 ---
 
 ## Quick Resume Checklist
-- [ ] Clone/pull and checkout `master`
-- [ ] `cp .env.example .env.local` (or provide real `OPENROUTER_API_KEY`)
+- [ ] Clone/pull and checkout `main`
 - [ ] `npm install`
+- [ ] Create `.env` with `DATABASE_URL=file:./dev.db` (Prisma reads this file)
+- [ ] Create `.env.local` with `OPENROUTER_API_KEY=sk-or-v1-...` (Next.js reads this file)
 - [ ] `npx prisma generate && npx prisma db push`
 - [ ] `npm test` — expect 80 tests passing, 0 failures
 - [ ] `npm run build` — expect clean production build
 - [ ] `npm run dev` — expect dashboard at http://localhost:3000
 - [ ] Review "Current Blockers" and "Next Steps" sections below
+
+> **Note:** Prisma reads `.env` for `DATABASE_URL`. Next.js reads `.env.local` for runtime vars like `OPENROUTER_API_KEY`. Both files are gitignored.
 
 ## AI Continuity Checklist
 - [x] Latest handoff reviewed (this is the first handoff)
@@ -133,7 +136,14 @@ finESS/
 ```bash
 # Setup (one-time)
 npm install
-cp .env.example .env.local  # or manually create with OPENROUTER_API_KEY=your_key
+
+# Create .env for Prisma (database connection)
+echo "DATABASE_URL=file:./dev.db" > .env
+
+# Create .env.local for Next.js runtime (AI API key)
+echo "OPENROUTER_API_KEY=sk-or-v1-your-key-here" > .env.local
+
+# Generate Prisma client and create database
 npx prisma generate
 npx prisma db push
 
@@ -144,6 +154,8 @@ npm run dev
 # Click "Examples" → "Pulmonary Embolism Risk (Instant)" for immediate demo
 # The PE demo runs entirely client-side, no API key needed
 ```
+
+> **Why two env files?** Prisma CLI reads `.env` at build/generate time. Next.js reads `.env.local` at runtime. Both are gitignored.
 
 ### Tests
 ```bash
@@ -246,10 +258,16 @@ npm test && npm run build
 ## Configuration & Secrets
 
 ### Environment Variables
+
+**`.env`** (read by Prisma CLI):
+| Variable | Purpose | Where to Get |
+|----------|---------|--------------|
+| `DATABASE_URL` | Prisma database connection | Default: `file:./dev.db` (SQLite) |
+
+**`.env.local`** (read by Next.js runtime):
 | Variable | Purpose | Where to Get |
 |----------|---------|--------------|
 | `OPENROUTER_API_KEY` | AI model access via OpenRouter | https://openrouter.ai/keys |
-| `DATABASE_URL` | Prisma database connection | Default: `file:./dev.db` (SQLite) |
 
 ### External Dependencies
 | Service | Purpose | Local Alternative |
