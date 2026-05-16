@@ -13,7 +13,8 @@ describe("getAnalysisStatus", () => {
     expect(status.label).toBe("No analysis yet");
     expect(status.canSave).toBe(false);
     expect(status.canCalibrate).toBe(false);
-    expect(status.nextAction).toBe("Run the instant demo");
+    expect(status.nextAction).toBe("Analyze observed data");
+    expect(status.detail).toContain("observed CSV");
   });
 
   test("reports a completed unsaved analysis", () => {
@@ -45,6 +46,19 @@ describe("getAnalysisStatus", () => {
     expect(status.canSave).toBe(true);
     expect(status.canCalibrate).toBe(true);
     expect(status.nextAction).toBe("Record outcome");
+  });
+
+  test("labels saved observed results without seed language", () => {
+    const status = getAnalysisStatus({
+      hasGraph: true,
+      hasResult: true,
+      phase: "complete",
+      savedAnalysisId: "abc123456789",
+      hasUnsavedChanges: false,
+      analysisMode: "observed",
+    });
+
+    expect(status.detail).toBe("Saved ID abc12345. Observed result is preserved locally.");
   });
 
   test("marks saved analyses dirty after graph edits", () => {

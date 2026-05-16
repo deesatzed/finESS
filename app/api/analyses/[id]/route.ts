@@ -1,15 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { apiError } from "@/lib/api/errors";
+import { getAuthenticatedContext } from "@/lib/auth/local-session";
 
 // GET /api/analyses/:id — load a single analysis
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
-    const analysis = await prisma.analysis.findUnique({
-      where: { id: params.id },
+    const auth = await getAuthenticatedContext(request);
+    if (!auth) return apiError("UNAUTHENTICATED", "Authentication required", 401);
+
+    const analysis = await prisma.analysis.findFirst({
+      where: {
+        id: params.id,
+        userId: auth.userId,
+        workspaceId: auth.workspaceId,
+      },
     });
 
     if (!analysis) {
@@ -18,6 +26,8 @@ export async function GET(
 
     return NextResponse.json({
       id: analysis.id,
+      userId: analysis.userId,
+      workspaceId: analysis.workspaceId,
       query: analysis.query,
       graph: JSON.parse(analysis.graphJson),
       result: analysis.resultJson ? JSON.parse(analysis.resultJson) : null,
@@ -34,12 +44,19 @@ export async function GET(
 
 // DELETE /api/analyses/:id — delete an analysis
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
-    const analysis = await prisma.analysis.findUnique({
-      where: { id: params.id },
+    const auth = await getAuthenticatedContext(request);
+    if (!auth) return apiError("UNAUTHENTICATED", "Authentication required", 401);
+
+    const analysis = await prisma.analysis.findFirst({
+      where: {
+        id: params.id,
+        userId: auth.userId,
+        workspaceId: auth.workspaceId,
+      },
     });
 
     if (!analysis) {

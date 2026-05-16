@@ -1,15 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { apiError, readJsonBody, validationError } from "@/lib/api/errors";
+import { getAuthenticatedContext } from "@/lib/auth/local-session";
 import { validateAnalysisSaveRequest } from "@/lib/validation/schemas";
 
 // GET /api/analyses — list all saved analyses
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const auth = await getAuthenticatedContext(request);
+    if (!auth) return apiError("UNAUTHENTICATED", "Authentication required", 401);
+
     const analyses = await prisma.analysis.findMany({
+      where: {
+        userId: auth.userId,
+        workspaceId: auth.workspaceId,
+      },
       orderBy: { createdAt: "desc" },
       select: {
         id: true,
+        userId: true,
+        workspaceId: true,
         query: true,
         seed: true,
         createdAt: true,
@@ -25,11 +35,16 @@ export async function GET() {
 // POST /api/analyses — save a new analysis
 export async function POST(request: NextRequest) {
   try {
+    const auth = await getAuthenticatedContext(request);
+    if (!auth) return apiError("UNAUTHENTICATED", "Authentication required", 401);
+
     const { query, graph, result, sensitivity, seed } =
       validateAnalysisSaveRequest(await readJsonBody(request));
 
     const analysis = await prisma.analysis.create({
       data: {
+        userId: auth.userId,
+        workspaceId: auth.workspaceId,
         query,
         graphJson: JSON.stringify(graph),
         resultJson: result ? JSON.stringify(result) : null,
@@ -38,7 +53,14 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    return NextResponse.json({ id: analysis.id }, { status: 201 });
+    return NextResponse.json(
+      {
+        id: analysis.id,
+        userId: analysis.userId,
+        workspaceId: analysis.workspaceId,
+      },
+      { status: 201 }
+    );
   } catch (error) {
     const validation = validationError(error);
     if (validation) return validation;

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import type { SimulationPhase, SimulationResult, SensitivityResult } from "@/lib/types";
+import type { RealDataInsight } from "@/lib/real-data/assist";
 
 interface NarrationStreamProps {
   phase: SimulationPhase;
@@ -10,6 +11,9 @@ interface NarrationStreamProps {
   result: SimulationResult | null;
   sensitivity: SensitivityResult[] | null;
   threshold?: number;
+  analysisMode?: "simulation" | "observed";
+  aiInsight?: RealDataInsight | null;
+  aiError?: string | null;
 }
 
 export function NarrationStream({
@@ -19,6 +23,9 @@ export function NarrationStream({
   result,
   sensitivity,
   threshold,
+  analysisMode,
+  aiInsight,
+  aiError,
 }: NarrationStreamProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -43,15 +50,24 @@ export function NarrationStream({
 
   if (phase === "complete" && result) {
     lines.push({
-      text: `Simulation complete. ${result.samples.length.toLocaleString()} samples.`,
+      text:
+        analysisMode === "observed"
+          ? `Observed analysis complete. ${result.samples.length.toLocaleString()} records.`
+          : `Simulation complete. ${result.samples.length.toLocaleString()} samples.`,
       type: "data",
     });
     lines.push({
-      text: `Posterior mean: ${(result.mean * 100).toFixed(1)}%`,
+      text:
+        analysisMode === "observed"
+          ? `Observed mean: ${formatValue(result.mean)}`
+          : `Posterior mean: ${(result.mean * 100).toFixed(1)}%`,
       type: "data",
     });
     lines.push({
-      text: `95% CI: [${(result.ciLow * 100).toFixed(1)}% \u2013 ${(result.ciHigh * 100).toFixed(1)}%]`,
+      text:
+        analysisMode === "observed"
+          ? `Empirical 95% interval: [${formatValue(result.ciLow)}, ${formatValue(result.ciHigh)}]`
+          : `95% CI: [${(result.ciLow * 100).toFixed(1)}% \u2013 ${(result.ciHigh * 100).toFixed(1)}%]`,
       type: "data",
     });
     if (threshold !== undefined) {
@@ -74,6 +90,20 @@ export function NarrationStream({
         });
       }
     }
+  }
+
+  if (aiInsight) {
+    lines.push({ text: `AI interpretation: ${aiInsight.summary}`, type: "info" });
+    for (const caution of aiInsight.cautions) {
+      lines.push({ text: `Caution: ${caution}`, type: "data" });
+    }
+    for (const nextCheck of aiInsight.nextChecks) {
+      lines.push({ text: `Next check: ${nextCheck}`, type: "recommend" });
+    }
+  }
+
+  if (aiError) {
+    lines.push({ text: `AI assist unavailable: ${aiError}`, type: "data" });
   }
 
   return (
@@ -101,4 +131,9 @@ export function NarrationStream({
       ))}
     </div>
   );
+}
+
+function formatValue(value: number) {
+  if (Math.abs(value) >= 1) return value.toFixed(3);
+  return value.toFixed(4);
 }

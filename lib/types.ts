@@ -48,6 +48,8 @@ export interface UncertaintyGraph {
   edges: ReasoningEdge[];
   /** The node ID that produces the final output */
   outputNodeId: string;
+  /** Whether the graph represents simulation assumptions or observed data. */
+  analysisMode?: "simulation" | "observed";
   /** Decision threshold (e.g., 0.30 for PE) */
   threshold?: number;
   /** AI-generated narration explaining the reasoning */

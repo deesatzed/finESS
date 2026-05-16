@@ -1,95 +1,135 @@
-# finESS — Handoff Packet
+# finESS Handoff Packet
 
 **Generated:** 2026-05-16
 **Branch:** `main`
-**Mitigation checkpoint commit:** `0f07d39790c7522733314fd2f8a3494606d9c2ae` (`0f07d39`)
-**Remote tracking:** `main...origin/main`; pushed and verified on GitHub.
-**Working tree:** clean for committed mitigation scope; only stale historical `HANDOFF_2026-05-15.md` remains untracked and intentionally excluded.
+**Current commit:** `609140ae277a67fcbf2b5a4be8a103641aaec34b` (`609140a`)
+**Working tree:** dirty with intentional local IT-07, Real Data Mode, OpenRouter model/key, AI-assist, tests, and handoff updates. Stale historical `HANDOFF_2026-05-15.md` remains untracked and intentionally preserved.
+**Status:** pre-production local beta implementation is in place, but live OpenRouter AI-assist browser success is blocked until a valid local key is configured or entered in-session.
 
-## Verified State
+## Current Product State
 
-finESS is now a verified local-only, single-user beta candidate. The app keeps the existing Next.js/Prisma/SQLite architecture, runs the instant PE demo without an AI key, guards local env precedence, supports local Save/Load and Calibration workflows, rejects unsupported graph edge methods, exposes clearer first-run and lifecycle UX, and has CI/API/E2E verification coverage.
+finESS is a local Next.js/Prisma/SQLite beta with Real Data Mode as the primary first-run workflow. Users can paste or upload CSV rows, select a measured target column, set an optional threshold, compute empirical observed-data statistics locally, save the observed result, load it without rerunning simulation, and record calibration outcomes against the saved observed result.
 
-## Completed Mitigations
+OpenRouter setup is now local-config driven. `/api/models` reads `OPENROUTER_MODELS` plus `OPENROUTER_DEFAULT_MODEL`/`OPENROUTER_MODEL`, returns model IDs/labels/default metadata, and reports key presence without returning the key. The UI shows the configured models, shows key state, and supports a session-only OpenRouter key override that is not stored in tracked files.
 
-| ID | Status | Evidence |
+AI Assist is opt-in from an observed-data result. It sends only computed summary statistics, target label, row count, missingness count, threshold, and selected model to OpenRouter. Raw CSV rows remain local. Local empirical calculations remain authoritative, and AI interpretation is rendered separately.
+
+## Assumptions Recorded
+
+- Local SQLite remains the target runtime.
+- Runtime API keys are session/browser-memory only. No persistent key storage was added.
+- OpenRouter may interpret computed observed-data summaries but must not replace local empirical calculations.
+- `.env.local` currently has `OPENROUTER_API_KEY` empty, `OPENROUTER_MODELS` set, `OPENROUTER_DEFAULT_MODEL` set, and no `DATABASE_URL`.
+- Live OpenRouter success cannot be honestly verified in this workspace until a valid key is configured locally or entered in the UI.
+
+## Completed Work
+
+| Area | Status | Files |
 |---|---|---|
-| `IT-01` | Complete | `scripts/check-env.mjs`, `npm run check:env`, `.env.local` no longer contains `DATABASE_URL=` |
-| `IT-02` | Complete | Save/Load and Calibration UI files exist, build, and are included in pushed mitigation commit `1f46abcc15bf5f03ae9a97b52caf182093a28ca0` |
-| `UX-01` | Complete | `components/FirstRunPanel.tsx`; first screen offers `Try instant PE demo` |
-| `UX-02` | Complete | `components/AnalysisStatusStrip.tsx`, `lib/ui/analysis-status.ts`, lifecycle tests |
-| `UX-03` | Complete | Calibration is gated until a saved completed analysis exists; Save/Load callbacks set saved state |
-| `IT-03` | Complete | `__tests__/api/routes.test.ts` covers analyses, single analysis, calibration, analyze, and models routes |
-| `IT-04` | Complete | `.github/workflows/ci.yml` runs env check, Prisma, Jest, E2E, and build |
-| `IT-05` | Complete | `custom` removed from `CombinationMethod` and parser methods; executor throws on unsupported methods |
-| `IT-06` | Complete | `lib/validation/schemas.ts` validates graph, analysis save, calibration, and analyze request bodies |
-| `IT-08` | Complete | API routes return `{ error: { code, message } }`; upstream OpenRouter body is not echoed |
-| `IT-09` | Complete | `scripts/verify-mitigations.sh` runs env, Prisma, tests, build, runtime smoke, and E2E |
-| `IT-10` | Complete | `npm run test:e2e` runs `__tests__/e2e/workflow.test.ts` for PE simulate/save/load/calibrate |
-| `UX-05` | Complete | `components/ModelSelector.tsx` uses local `/api/models` setup and explains model/API-key state |
-| `UX-06` | Complete | `components/Dashboard.tsx` has desktop/tablet/mobile grid variants |
-| `IT-11` | Complete | `.gitignore` ignores root local prototype HTML artifacts without deleting them |
-| `DOC-01` | Complete | This handoff reflects current verified local state and deferred risks |
+| IT-07 ownership | Complete locally | `prisma/schema.prisma`, `lib/auth/*`, `app/api/auth/local/route.ts`, guarded analyses/calibration routes, ownership tests |
+| Real Data Mode | Complete locally | `components/RealDataPanel.tsx`, `lib/real-data/csv.ts`, `lib/real-data/analyze.ts`, E2E tests |
+| OpenRouter model config | Complete locally | `lib/ai/model-config.ts`, `app/api/models/route.ts`, `.env.example`, model-config tests |
+| Session API-key setup | Complete locally | `components/ModelSelector.tsx`, `app/api/analyze/route.ts`, validation/tests |
+| AI-assisted observed interpretation | Implemented, mocked tests pass | `app/api/real-data/assist/route.ts`, `lib/real-data/assist.ts`, API/E2E tests |
+| Save/Load observed restore | Complete locally | `components/SaveLoadModal.tsx`, `lib/ui/compact-result.ts`, E2E/browser smoke |
+| Calibration observed outcome | Complete locally | `components/CalibrationModal.tsx`, `app/api/calibration/route.ts`, E2E/browser smoke |
 
 ## Verification Results
 
 | Command | Result |
 |---|---|
-| `./scripts/verify-mitigations.sh` | PASS; exited 0 and printed `ALL MITIGATIONS VERIFIED` when run with escalated local port permission because the sandbox blocks dev-server listen calls |
-| `npm test -- --runInBand` | PASS in verifier: 105 tests, 11 suites |
-| `npm run build` | PASS in verifier; Next.js production build completed |
-| `npm run check:env` | PASS; `Environment preflight passed` |
-| `git grep -n '"custom"' -- lib app components __tests__` | PASS; no matches |
-| `git diff --check` | PASS; clean after handoff whitespace fix |
-| `npm run test:e2e` | PASS; 2 E2E workflow tests |
-| `__tests__/api/routes.test.ts` | PASS; 9 API integration tests |
+| `npm run check:env` | PASS; `Environment preflight passed`; `.env.local` does not provide `DATABASE_URL` |
+| `npm test -- --runInBand` | PASS; 16 suites, 128 tests |
+| `npm run test:e2e` | PASS; 1 suite, 4 workflow tests |
+| `npm run build` | PASS; Next.js production build completed and includes `/api/real-data/assist` |
+| `git grep -n '"custom"' -- lib app components __tests__` | PASS for unsupported-method check; no matches returned |
+| `npm test -- --runInBand __tests__/ai/model-config.test.ts __tests__/api/routes.test.ts __tests__/real-data/analyze.test.ts __tests__/real-data/assist.test.ts __tests__/e2e/workflow.test.ts __tests__/ui/analysis-status.test.ts` | PASS; 6 suites, 33 tests |
+| `npm run build` | PASS; Next.js production build completed and includes `/api/real-data/assist` |
+| `node` local env inspection | `.env.local` has `OPENROUTER_API_KEY:empty`, `OPENROUTER_MODELS:set`, `OPENROUTER_DEFAULT_MODEL:set`, `DATABASE_URL:absent` |
+| `git diff --check` | PASS after removing Markdown trailing whitespace |
 
-## Remote Checkpoint
+## Browser Smoke Evidence
 
-- Mitigation commit: `1f46abcc15bf5f03ae9a97b52caf182093a28ca0` (`feat: verify local-only single-user beta mitigations`), pushed to `origin/main`.
-- CI dependency fix commit: `0f07d39790c7522733314fd2f8a3494606d9c2ae` (`fix: add jest config runtime dependency`), pushed to `origin/main`.
-- GitHub remote verification: `git ls-remote origin main` matched `0f07d39790c7522733314fd2f8a3494606d9c2ae`.
-- CI run: `25962996391` (`CI`, `verify`) completed successfully for `0f07d39790c7522733314fd2f8a3494606d9c2ae`: https://github.com/deesatzed/finESS/actions/runs/25962996391
-- Prior run `25962957102` failed because GitHub Actions lacked the Jest TypeScript config runtime dependency `ts-node`; `0f07d39` fixes that gap.
-- This handoff file is committed in a follow-up docs checkpoint after the green mitigation CI. Use `git log -1 --oneline` for the exact final handoff commit SHA.
+Safari at `http://127.0.0.1:3100` verified the current showpiece path:
+
+- App loaded from a clean dev server on port `3100`.
+- OpenRouter model list showed `OpenRouter Auto` from local env/config.
+- Key state showed `No API key active` when `.env.local` had no key.
+- Sample CSV loaded locally: `id,outcome,score` with 5 rows.
+- Target column selected: `outcome`.
+- Threshold set: `0.5`.
+- Observed result rendered from 4 usable target rows with 1 missing target row: mean `0.7500`, empirical interval `[0.0750, 1.000]`, `P(>50%) = 75.0%`.
+- Session-only API-key UX accepted a placeholder key, changed state to `Session API key active; not stored`, enabled `AI Assist`, and cleared back to `No API key active`.
+- Save succeeded with ID `cmp8lxfj400011yvm1di2ur6j`.
+- Load restored the saved observed analysis without rerunning simulation.
+- Calibration opened for the saved observed result at predicted probability `75.0%`.
+- Recording `It happened` succeeded and advanced calibration progress from `1 / 20` to `2 / 20`.
+- The dev server was stopped after smoke; `lsof -iTCP:3100 -sTCP:LISTEN` returned no listener.
+
+Live AI Assist with a real OpenRouter response was not executed because no valid API key is configured in this workspace. Mocked API and E2E tests verify request shape, secret non-echoing, and response rendering path.
 
 ## Environment State
 
-- `.env` contains `DATABASE_URL` for local SQLite.
-- `.env.local` contains `OPENROUTER_API_KEY` as empty in this workspace and does not contain `DATABASE_URL`.
-- `scripts/check-env.mjs` rejects an empty `DATABASE_URL` in `.env.local`.
-- No real secrets were printed or added.
+- `.env` contains local SQLite `DATABASE_URL`.
+- `.env.local` has no `DATABASE_URL` and has an empty `OPENROUTER_API_KEY`.
+- `.env.local` has non-secret model config for `OPENROUTER_MODELS` and `OPENROUTER_DEFAULT_MODEL`.
+- No real secrets were printed, committed, or added to tracked files.
 
-## Local Untracked State
+## Deferred Production Risks
 
-The mitigation scope has been committed and pushed. Included files:
-
-- `.env.example`, `.gitignore`, `package.json`
-- `.github/workflows/ci.yml`
-- `scripts/check-env.mjs`, `scripts/verify-mitigations.sh`
-- `app/api/analyses/*`, `app/api/analyze/route.ts`, `app/api/calibration/route.ts`, `app/api/models/route.ts`
-- `app/page.tsx`
-- `components/AnalysisStatusStrip.tsx`, `CalibrationModal.tsx`, `Dashboard.tsx`, `FirstRunPanel.tsx`, `InputBar.tsx`, `ModelSelector.tsx`, `SaveLoadModal.tsx`
-- `lib/api/errors.ts`, `lib/ui/analysis-status.ts`, `lib/validation/schemas.ts`
-- `lib/types.ts`, `lib/ai/parse-response.ts`, `lib/engine/dag-executor.ts`
-- `__tests__/api/routes.test.ts`, `__tests__/e2e/workflow.test.ts`, `__tests__/scripts/check-env.test.ts`, `__tests__/ui/analysis-status.test.ts`, `__tests__/validation/schemas.test.ts`, plus parser/executor regression tests
-- `docs/plans/2026-05-16-finess-ux-it-mitigation-plan.md`, `docs/plans/IMPLEMENTATION_PACKET.md`
-
-Unrelated/unresolved local item preserved:
-
-- `HANDOFF_2026-05-15.md` is an untracked stale historical snapshot and was not modified or committed by this mitigation pass.
-
-## Deferred Risks
-
-- `IT-07` hosted auth/tenant isolation remains deferred. Do not deploy this as a shared hosted app until auth, workspace/user scoping, and privacy review are implemented.
+- Hosted deployment remains deferred: auth provider choice, HTTPS-only cookies, account recovery/admin policy, migration/backfill policy, production secret management, privacy/compliance review, and abuse/rate-limit policy are not implemented.
+- Live OpenRouter smoke remains pending until a valid local key is available.
+- Persistent key storage is intentionally not implemented.
 - `IT-12` structured audit/observability events remain deferred.
 - `PERF-01` simulation performance guardrails remain deferred.
-- Optional export/report object for saved analyses remains deferred.
-- The app is domain-agnostic and does not provide clinical, legal, financial, engineering, or policy advice. It preserves uncertainty framing only.
+- Real Data Mode supports single-table CSV only; joins, time-series validation splits, model fitting, external connectors, and report/export features remain deferred.
+- finESS remains domain-agnostic. It does not provide clinical, legal, financial, engineering, or policy advice.
+
+## Local Changed Files
+
+Intentional local changes include:
+
+- `.env.example`
+- `HANDOFF_LATEST.md`
+- `app/api/analyses/[id]/route.ts`
+- `app/api/analyses/route.ts`
+- `app/api/analyze/route.ts`
+- `app/api/auth/local/route.ts`
+- `app/api/calibration/route.ts`
+- `app/api/models/route.ts`
+- `app/api/real-data/assist/route.ts`
+- `app/page.tsx`
+- `components/AnalysisStatusStrip.tsx`
+- `components/CalibrationModal.tsx`
+- `components/ModelSelector.tsx`
+- `components/NarrationStream.tsx`
+- `components/RealDataPanel.tsx`
+- `components/SaveLoadModal.tsx`
+- `components/panels/LiveDistribution.tsx`
+- `components/panels/SpectrumBars.tsx`
+- `docs/plans/2026-05-16-real-data-mode-design.md`
+- `lib/ai/model-config.ts`
+- `lib/auth/client.ts`
+- `lib/auth/local-session.ts`
+- `lib/real-data/analyze.ts`
+- `lib/real-data/assist.ts`
+- `lib/real-data/csv.ts`
+- `lib/types.ts`
+- `lib/ui/analysis-status.ts`
+- `lib/ui/compact-result.ts`
+- `lib/validation/schemas.ts`
+- `prisma/schema.prisma`
+- `__tests__/ai/model-config.test.ts`
+- `__tests__/api/routes.test.ts`
+- `__tests__/e2e/workflow.test.ts`
+- `__tests__/real-data/analyze.test.ts`
+- `__tests__/real-data/assist.test.ts`
+- `__tests__/real-data/csv.test.ts`
+- `__tests__/ui/analysis-status.test.ts`
+- `__tests__/ui/compact-result.test.ts`
 
 ## Operator Notes
 
-- Use local SQLite for this beta.
-- PE demo requires no model or API key.
-- Custom AI-generated graphs require `OPENROUTER_API_KEY` and a configured/entered model.
-- Runtime smoke may require permission to bind a local port in sandboxed environments.
+- To complete live OpenRouter smoke, set a valid `OPENROUTER_API_KEY` in `.env.local` or enter it in the session-only UI field. Do not paste the key into chat or commit it.
+- Start locally with `npm run dev -- -H 127.0.0.1 -p 3100`.
+- Real Data Mode is the primary path; the PE simulation remains available as a legacy/demo path.

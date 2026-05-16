@@ -9,7 +9,7 @@ import { NarrationStream } from "@/components/NarrationStream";
 import { NodeEditor } from "@/components/NodeEditor";
 import { SaveLoadModal } from "@/components/SaveLoadModal";
 import CalibrationModal from "@/components/CalibrationModal";
-import { FirstRunPanel } from "@/components/FirstRunPanel";
+import { RealDataPanel } from "@/components/RealDataPanel";
 import NodeNetwork from "@/components/panels/NodeNetwork";
 import LiveDistribution from "@/components/panels/LiveDistribution";
 import SensitivityRadar from "@/components/panels/SensitivityRadar";
@@ -18,6 +18,8 @@ import SpectrumBars from "@/components/panels/SpectrumBars";
 import { useSimulation } from "@/lib/engine/use-simulation";
 import { PE_EXAMPLE_GRAPH } from "@/lib/examples/pe-scenario";
 import { getAnalysisStatus } from "@/lib/ui/analysis-status";
+import type { ObservedAnalysisResult } from "@/lib/real-data/analyze";
+import type { RealDataInsight } from "@/lib/real-data/assist";
 import type { UncertaintyGraph, SimulationResult, SensitivityResult } from "@/lib/types";
 
 function getApiErrorMessage(data: unknown, fallback: string) {
@@ -42,6 +44,8 @@ function getApiErrorMessage(data: unknown, fallback: string) {
 
 export default function Home() {
   const [model, setModel] = useState("");
+  const [sessionApiKey, setSessionApiKey] = useState("");
+  const [hasUsableAiKey, setHasUsableAiKey] = useState(false);
   const [graph, setGraph] = useState<UncertaintyGraph | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -52,6 +56,16 @@ export default function Home() {
   const [showCalibration, setShowCalibration] = useState(false);
   const [savedAnalysisId, setSavedAnalysisId] = useState<string | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [observedResult, setObservedResult] = useState<SimulationResult | null>(null);
+  const [observedSensitivity, setObservedSensitivity] = useState<SensitivityResult[] | null>(null);
+  const [observedMeta, setObservedMeta] = useState<{
+    targetColumn: string;
+    rowCount: number;
+    missingCount: number;
+  } | null>(null);
+  const [aiInsight, setAiInsight] = useState<RealDataInsight | null>(null);
+  const [aiAssistError, setAiAssistError] = useState<string | null>(null);
+  const [aiAssistLoading, setAiAssistLoading] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const sim = useSimulation();
@@ -66,6 +80,11 @@ export default function Home() {
     ) => {
       setGraph(g);
       setError(null);
+      setObservedResult(null);
+      setObservedSensitivity(null);
+      setObservedMeta(null);
+      setAiInsight(null);
+      setAiAssistError(null);
       setHasUnsavedChanges(options.markUnsaved ?? true);
       samplesRef.current = [];
       setAllSamples([]);
@@ -89,20 +108,27 @@ export default function Home() {
   }
 
   const displaySamples =
-    sim.phase === "complete" && sim.result
-      ? sim.result.samples
+    observedResult
+      ? observedResult.samples
+      : sim.phase === "complete" && sim.result
+        ? sim.result.samples
       : allSamples;
+
+  const activePhase = observedResult ? "complete" : sim.phase;
+  const activeResult = observedResult ?? sim.result;
+  const activeSensitivity = observedSensitivity ?? sim.sensitivity;
 
   const analysisStatus = useMemo(
     () =>
       getAnalysisStatus({
         hasGraph: graph !== null,
-        hasResult: sim.result !== null,
-        phase: sim.phase,
+        hasResult: activeResult !== null,
+        phase: activePhase,
         savedAnalysisId,
         hasUnsavedChanges,
+        analysisMode: graph?.analysisMode,
       }),
-    [graph, sim.result, sim.phase, savedAnalysisId, hasUnsavedChanges]
+    [graph, activeResult, activePhase, savedAnalysisId, hasUnsavedChanges]
   );
 
   const handleSubmit = useCallback(
@@ -121,7 +147,11 @@ export default function Home() {
         const res = await fetch("/api/analyze", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ query, model }),
+          body: JSON.stringify({
+            query,
+            model,
+            apiKey: sessionApiKey || undefined,
+          }),
         });
 
         const data = await res.json();
@@ -138,7 +168,7 @@ export default function Home() {
         setIsAnalyzing(false);
       }
     },
-    [model, runSimulation]
+    [model, runSimulation, sessionApiKey]
   );
 
   const handleRunExample = useCallback(() => {
@@ -148,9 +178,68 @@ export default function Home() {
       runSimulation(PE_EXAMPLE_GRAPH);
   }, [runSimulation]);
 
-  const handleFocusInput = useCallback(() => {
-    inputRef.current?.focus();
-  }, []);
+  const handleRunObservedData = useCallback(
+    (analysis: ObservedAnalysisResult) => {
+      sim.cancel();
+      setGraph(analysis.graph);
+      setObservedResult(analysis.result);
+      setObservedSensitivity(analysis.sensitivity);
+      setObservedMeta({
+        targetColumn: analysis.targetColumn,
+        rowCount: analysis.rowCount,
+        missingCount: analysis.missingCount,
+      });
+      setAiInsight(null);
+      setAiAssistError(null);
+      setCurrentQuery(`Observed CSV: ${analysis.targetColumn} (${analysis.rowCount} rows)`);
+      setSavedAnalysisId(null);
+      setHasUnsavedChanges(true);
+      setError(null);
+      samplesRef.current = analysis.result.samples;
+      setAllSamples(analysis.result.samples);
+    },
+    [sim]
+  );
+
+  const handleAiAssist = useCallback(async () => {
+    if (!observedResult || !graph || graph.analysisMode !== "observed") return;
+    setAiAssistLoading(true);
+    setAiAssistError(null);
+    setAiInsight(null);
+    try {
+      const res = await fetch("/api/real-data/assist", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query: currentQuery ?? "Observed data analysis",
+          targetColumn:
+            observedMeta?.targetColumn ??
+            graph.nodes.find((node) => node.id === "observed_values")?.unit ??
+            graph.outputNodeId,
+          rowCount: observedMeta?.rowCount ?? observedResult.samples.length,
+          missingCount: observedMeta?.missingCount ?? 0,
+          mean: observedResult.mean,
+          median: observedResult.median,
+          ciLow: observedResult.ciLow,
+          ciHigh: observedResult.ciHigh,
+          pAboveThreshold: observedResult.pAboveThreshold,
+          threshold: graph.threshold ?? null,
+          model,
+          apiKey: sessionApiKey || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setAiAssistError(getApiErrorMessage(data, `AI assist failed (${res.status})`));
+        return;
+      }
+      setAiInsight(data.insight);
+    } catch (err) {
+      setAiAssistError(err instanceof Error ? err.message : "AI assist failed");
+    } finally {
+      setAiAssistLoading(false);
+    }
+  }, [currentQuery, graph, model, observedMeta, observedResult, sessionApiKey]);
 
   const handleNodeClick = useCallback((nodeId: string) => {
     setEditingNodeId(nodeId);
@@ -168,14 +257,27 @@ export default function Home() {
       setCurrentQuery(data.query);
       setSavedAnalysisId(data.id);
       setHasUnsavedChanges(false);
-      if (data.result) {
+      if (data.graph.analysisMode === "observed" && data.result) {
+        sim.cancel();
+        setGraph(data.graph);
+        setObservedResult(data.result);
+        setObservedSensitivity(data.sensitivity ?? []);
+        setObservedMeta({
+          targetColumn:
+            data.graph.nodes.find((node) => node.id === "observed_values")?.unit ??
+            data.graph.outputNodeId,
+          rowCount: data.result.samples.length,
+          missingCount: 0,
+        });
+        setAiInsight(null);
+        setAiAssistError(null);
         setAllSamples(data.result.samples);
         samplesRef.current = data.result.samples;
+        return;
       }
-      // Run the simulation fresh with the loaded graph
       runSimulation(data.graph, { seed: data.seed, markUnsaved: false });
     },
-    [runSimulation]
+    [runSimulation, sim]
   );
 
   const handleGraphUpdate = useCallback(
@@ -206,32 +308,46 @@ export default function Home() {
       </header>
 
       {/* Model Selector */}
-      <ModelSelector selectedModel={model} onModelChange={setModel} />
+      <ModelSelector
+        selectedModel={model}
+        onModelChange={setModel}
+        sessionApiKey={sessionApiKey}
+        onSessionApiKeyChange={setSessionApiKey}
+        onApiKeyAvailabilityChange={setHasUsableAiKey}
+      />
 
       <AnalysisStatusStrip
         status={analysisStatus}
         query={currentQuery}
-        seed={sim.result?.seed ?? null}
+        seed={graph?.analysisMode === "observed" ? null : sim.result?.seed ?? null}
         onSaveLoad={() => setShowSaveLoad(true)}
         onCalibration={() => {
           if (analysisStatus.canCalibrate) setShowCalibration(true);
         }}
+        onAiAssist={handleAiAssist}
+        canAiAssist={
+          graph?.analysisMode === "observed" &&
+          activeResult !== null &&
+          Boolean(model) &&
+          hasUsableAiKey
+        }
+        aiAssistLoading={aiAssistLoading}
       />
 
       {/* Dashboard */}
       <Dashboard
         nodeNetwork={
           graph === null && sim.phase === "idle" ? (
-            <FirstRunPanel
-              onRunExample={handleRunExample}
-              onFocusInput={handleFocusInput}
+            <RealDataPanel
+              onAnalyze={handleRunObservedData}
+              onRunLegacyDemo={handleRunExample}
             />
           ) : (
             <NodeNetwork
               graph={graph}
-              sensitivity={sim.sensitivity}
-              phase={sim.phase}
-              progress={sim.progress}
+              sensitivity={activeSensitivity}
+              phase={activePhase}
+              progress={observedResult ? 1 : sim.progress}
               onNodeClick={handleNodeClick}
             />
           )
@@ -239,40 +355,43 @@ export default function Home() {
         liveDistribution={
           <LiveDistribution
             samples={displaySamples}
-            result={sim.result}
-            phase={sim.phase}
+            result={activeResult}
+            phase={activePhase}
             threshold={graph?.threshold}
           />
         }
         sensitivityRadar={
           <SensitivityRadar
-            sensitivity={sim.sensitivity}
-            phase={sim.phase}
+            sensitivity={activeSensitivity}
+            phase={activePhase}
           />
         }
         gaugePanel={
           <GaugePanel
-            result={sim.result}
-            sensitivity={sim.sensitivity}
-            phase={sim.phase}
-            progress={sim.progress}
+            result={activeResult}
+            sensitivity={activeSensitivity}
+            phase={activePhase}
+            progress={observedResult ? 1 : sim.progress}
           />
         }
         spectrumBars={
           <SpectrumBars
             graph={graph}
-            nodeSamples={sim.result?.nodeSamples ?? null}
-            phase={sim.phase}
+            nodeSamples={activeResult?.nodeSamples ?? null}
+            phase={activePhase}
           />
         }
         narrationStream={
           <NarrationStream
-            phase={sim.phase}
-            progress={sim.progress}
+            phase={activePhase}
+            progress={observedResult ? 1 : sim.progress}
             narration={graph?.narration ?? null}
-            result={sim.result}
-            sensitivity={sim.sensitivity}
+            result={activeResult}
+            sensitivity={activeSensitivity}
             threshold={graph?.threshold}
+            analysisMode={graph?.analysisMode}
+            aiInsight={aiInsight}
+            aiError={aiAssistError}
           />
         }
       />
@@ -301,8 +420,8 @@ export default function Home() {
         onClose={() => setShowSaveLoad(false)}
         query={currentQuery}
         graph={graph}
-        result={sim.result}
-        sensitivity={sim.sensitivity}
+        result={activeResult}
+        sensitivity={activeSensitivity}
         onLoad={handleLoad}
         onSave={(id) => {
           setSavedAnalysisId(id);
@@ -315,7 +434,7 @@ export default function Home() {
         isOpen={showCalibration}
         onClose={() => setShowCalibration(false)}
         analysisId={savedAnalysisId}
-        predictedProbability={sim.result?.pAboveThreshold ?? null}
+        predictedProbability={activeResult?.pAboveThreshold ?? null}
       />
     </div>
   );

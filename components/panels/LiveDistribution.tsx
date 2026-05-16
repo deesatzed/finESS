@@ -160,7 +160,7 @@ export default function LiveDistribution({
       ctx.font = "14px ui-monospace, monospace";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText("Waiting for simulation...", w / 2, h / 2);
+      ctx.fillText("Waiting for data...", w / 2, h / 2);
       return;
     }
 

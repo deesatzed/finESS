@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import { ensureLocalSession } from "@/lib/auth/client";
 
 // ============================================================
 // CalibrationModal — Record outcomes & view calibration curve
@@ -105,6 +106,7 @@ export default function CalibrationModal({
     setIsFetching(true);
     setFetchError(null);
     try {
+      await ensureLocalSession();
       const res = await fetch("/api/calibration");
       if (!res.ok) {
         const body = await res.json().catch(() => null);
@@ -148,6 +150,7 @@ export default function CalibrationModal({
     setRecordSuccess(false);
 
     try {
+      await ensureLocalSession();
       const res = await fetch("/api/calibration", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

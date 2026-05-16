@@ -1,8 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { SYSTEM_PROMPT, buildUserMessage } from "@/lib/ai/prompt";
-import { parseAIResponse } from "@/lib/ai/parse-response";
-import { apiError, readJsonBody, validationError } from "@/lib/api/errors";
-import { validateAnalyzeRequest } from "@/lib/validation/schemas";
+import { apiError, readJsonBody } from "@/lib/api/errors";
+import {
+  buildRealDataAssistMessages,
+  parseRealDataInsight,
+  RealDataAssistError,
+  validateRealDataAssistRequest,
+} from "@/lib/real-data/assist";
+
+export const dynamic = "force-dynamic";
 
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX_REQUESTS = 20;
@@ -20,43 +25,38 @@ function isRateLimited() {
 
 export async function POST(request: NextRequest) {
   try {
-    const { query, model, apiKey: sessionApiKey } = validateAnalyzeRequest(
-      await readJsonBody(request)
-    );
+    const assistRequest = validateRealDataAssistRequest(await readJsonBody(request));
 
     if (isRateLimited()) {
-      return apiError(
-        "RATE_LIMITED",
-        "Too many custom AI requests. Wait a minute and try again.",
-        429
-      );
+      return apiError("RATE_LIMITED", "Too many AI assist requests.", 429);
     }
 
-    const apiKey = sessionApiKey ?? process.env.OPENROUTER_API_KEY;
+    const apiKey = assistRequest.apiKey ?? process.env.OPENROUTER_API_KEY?.trim();
     if (!apiKey) {
       return apiError(
         "MISSING_API_KEY",
-        "OPENROUTER_API_KEY is not configured for custom AI queries.",
-        500
+        "Provide a session API key or configure OPENROUTER_API_KEY locally.",
+        400
       );
     }
 
     const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${apiKey}`,
+        Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
         "HTTP-Referer": "https://finess.app",
-        "X-Title": "finESS Uncertainty Intelligence",
+        "X-Title": "finESS Real Data Mode",
       },
       body: JSON.stringify({
-        model,
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: buildUserMessage(query) },
-        ],
-        temperature: 0.7,
-        max_tokens: 4096,
+        model: assistRequest.model,
+        messages: buildRealDataAssistMessages({
+          ...assistRequest,
+          apiKey: undefined,
+        }),
+        temperature: 0.2,
+        max_tokens: 900,
+        response_format: { type: "json_object" },
       }),
     });
 
@@ -70,22 +70,15 @@ export async function POST(request: NextRequest) {
 
     const data = await response.json();
     const content = data.choices?.[0]?.message?.content;
-
-    if (!content) {
+    if (typeof content !== "string" || content.trim() === "") {
       return apiError("UPSTREAM_EMPTY_RESPONSE", "AI provider returned no content.", 502);
     }
 
-    const graph = parseAIResponse(content);
-
-    return NextResponse.json({ graph, rawResponse: content });
+    return NextResponse.json({ insight: parseRealDataInsight(content) });
   } catch (error) {
-    const validation = validationError(error);
-    if (validation) return validation;
-
-    if (error instanceof Error && error.message.includes("AI response")) {
-      return apiError("AI_RESPONSE_INVALID", error.message, 422);
+    if (error instanceof RealDataAssistError) {
+      return apiError("VALIDATION_ERROR", error.message, 400);
     }
-
     return apiError("INTERNAL_ERROR", "Internal server error", 500);
   }
 }

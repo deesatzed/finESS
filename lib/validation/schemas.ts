@@ -49,6 +49,7 @@ export interface CalibrationOutcomeRequest {
 export interface AnalyzeRequest {
   query: string;
   model: string;
+  apiKey?: string;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -161,6 +162,10 @@ export function validateUncertaintyGraph(value: unknown): UncertaintyGraph {
     nodes: graph.nodes.map(validateNode),
     edges: graph.edges.map(validateEdge),
     outputNodeId: graph.outputNodeId,
+    analysisMode:
+      graph.analysisMode === "observed" || graph.analysisMode === "simulation"
+        ? graph.analysisMode
+        : undefined,
     threshold: typeof graph.threshold === "number" ? graph.threshold : undefined,
     narration: typeof graph.narration === "string" ? graph.narration : undefined,
   };
@@ -254,5 +259,9 @@ export function validateAnalyzeRequest(value: unknown): AnalyzeRequest {
   return {
     query: body.query,
     model: body.model,
+    apiKey:
+      typeof body.apiKey === "string" && body.apiKey.trim() !== ""
+        ? body.apiKey.trim()
+        : undefined,
   };
 }

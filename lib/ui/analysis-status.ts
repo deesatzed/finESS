@@ -6,6 +6,7 @@ export interface AnalysisStatusInput {
   phase: SimulationPhase;
   savedAnalysisId: string | null;
   hasUnsavedChanges: boolean;
+  analysisMode?: "simulation" | "observed";
 }
 
 export interface AnalysisStatus {
@@ -23,8 +24,8 @@ export function getAnalysisStatus(input: AnalysisStatusInput): AnalysisStatus {
   if (!input.hasGraph) {
     return {
       label: "No analysis yet",
-      detail: "Start with the instant PE demo or enter a custom question.",
-      nextAction: "Run the instant demo",
+      detail: "Paste or upload observed CSV data to compute real empirical results.",
+      nextAction: "Analyze observed data",
       canSave: false,
       canCalibrate: false,
       shortId,
@@ -46,7 +47,10 @@ export function getAnalysisStatus(input: AnalysisStatusInput): AnalysisStatus {
     return {
       label: "Analysis in progress",
       detail: "The graph exists but no completed result is available yet.",
-      nextAction: "Run simulation",
+      nextAction:
+        input.analysisMode === "observed"
+          ? "Analyze observed data"
+          : "Run simulation",
       canSave: false,
       canCalibrate: false,
       shortId,
@@ -67,7 +71,10 @@ export function getAnalysisStatus(input: AnalysisStatusInput): AnalysisStatus {
   if (input.savedAnalysisId) {
     return {
       label: "Saved analysis",
-      detail: `Saved ID ${shortId}. Seed and result are preserved locally.`,
+      detail:
+        input.analysisMode === "observed"
+          ? `Saved ID ${shortId}. Observed result is preserved locally.`
+          : `Saved ID ${shortId}. Seed and result are preserved locally.`,
       nextAction: "Record outcome",
       canSave: true,
       canCalibrate: true,
@@ -77,7 +84,10 @@ export function getAnalysisStatus(input: AnalysisStatusInput): AnalysisStatus {
 
   return {
     label: "Unsaved analysis",
-    detail: "This completed result exists only in the current browser session.",
+    detail:
+      input.analysisMode === "observed"
+        ? "This observed result exists only in the current browser session."
+        : "This completed result exists only in the current browser session.",
     nextAction: "Save before recording outcomes",
     canSave: true,
     canCalibrate: false,

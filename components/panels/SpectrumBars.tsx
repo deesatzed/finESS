@@ -106,7 +106,7 @@ export default function SpectrumBars({
       ctx.textBaseline = "middle";
       ctx.fillStyle = "#475569";
       ctx.font = `14px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
-      ctx.fillText("Waiting for simulation...", w / 2, h / 2);
+      ctx.fillText("Waiting for data...", w / 2, h / 2);
       return;
     }
 

@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { ensureLocalSession } from "@/lib/auth/client";
+import { compactAnalysisResultForSave } from "@/lib/ui/compact-result";
 import type {
   UncertaintyGraph,
   SimulationResult,
@@ -78,6 +80,7 @@ export function SaveLoadModal({
     setLoadingList(true);
     setListError(null);
     try {
+      await ensureLocalSession();
       const res = await fetch("/api/analyses");
       if (!res.ok) {
         const body = await res.json().catch(() => null);
@@ -115,13 +118,14 @@ export function SaveLoadModal({
     setSavedId(null);
 
     try {
+      await ensureLocalSession();
       const res = await fetch("/api/analyses", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           query,
           graph,
-          result,
+          result: compactAnalysisResultForSave(result, graph),
           sensitivity,
           seed: result?.seed ?? null,
         }),
@@ -146,6 +150,7 @@ export function SaveLoadModal({
     async (id: string) => {
       setLoadingId(id);
       try {
+        await ensureLocalSession();
         const res = await fetch(`/api/analyses/${id}`);
         if (!res.ok) {
           const body = await res.json().catch(() => null);
@@ -175,6 +180,7 @@ export function SaveLoadModal({
       e.stopPropagation();
       setDeletingId(id);
       try {
+        await ensureLocalSession();
         const res = await fetch(`/api/analyses/${id}`, { method: "DELETE" });
         if (!res.ok) {
           const body = await res.json().catch(() => null);

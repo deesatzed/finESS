@@ -1,14 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { apiError, readJsonBody, validationError } from "@/lib/api/errors";
+import { getAuthenticatedContext } from "@/lib/auth/local-session";
 import { validateCalibrationOutcomeRequest } from "@/lib/validation/schemas";
 
 const MIN_OUTCOMES_FOR_CURVE = 20;
 
 // GET /api/calibration — get calibration data
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const auth = await getAuthenticatedContext(request);
+    if (!auth) return apiError("UNAUTHENTICATED", "Authentication required", 401);
+
     const outcomes = await prisma.calibrationOutcome.findMany({
+      where: {
+        userId: auth.userId,
+        workspaceId: auth.workspaceId,
+      },
       orderBy: { recordedAt: "desc" },
     });
 
@@ -61,12 +69,19 @@ export async function GET() {
 // POST /api/calibration — record a real outcome
 export async function POST(request: NextRequest) {
   try {
+    const auth = await getAuthenticatedContext(request);
+    if (!auth) return apiError("UNAUTHENTICATED", "Authentication required", 401);
+
     const { analysisId, predictedProbability, actualOutcome } =
       validateCalibrationOutcomeRequest(await readJsonBody(request));
 
     // Verify the analysis exists
-    const analysis = await prisma.analysis.findUnique({
-      where: { id: analysisId },
+    const analysis = await prisma.analysis.findFirst({
+      where: {
+        id: analysisId,
+        userId: auth.userId,
+        workspaceId: auth.workspaceId,
+      },
     });
 
     if (!analysis) {
@@ -75,6 +90,8 @@ export async function POST(request: NextRequest) {
 
     const outcome = await prisma.calibrationOutcome.create({
       data: {
+        userId: auth.userId,
+        workspaceId: auth.workspaceId,
         analysisId,
         predictedProbability,
         actualOutcome,

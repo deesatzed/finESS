@@ -8,6 +8,9 @@ interface AnalysisStatusStripProps {
   seed: number | null;
   onSaveLoad: () => void;
   onCalibration: () => void;
+  onAiAssist?: () => void;
+  canAiAssist?: boolean;
+  aiAssistLoading?: boolean;
 }
 
 export function AnalysisStatusStrip({
@@ -16,6 +19,9 @@ export function AnalysisStatusStrip({
   seed,
   onSaveLoad,
   onCalibration,
+  onAiAssist,
+  canAiAssist = false,
+  aiAssistLoading = false,
 }: AnalysisStatusStripProps) {
   return (
     <section className="flex flex-col gap-2 border-b border-[#1e293b] bg-[#0f1629] px-4 py-2 text-xs text-[#94a3b8] md:flex-row md:items-center md:justify-between">
@@ -33,6 +39,25 @@ export function AnalysisStatusStrip({
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
+        {onAiAssist && (
+          <button
+            type="button"
+            onClick={onAiAssist}
+            disabled={!canAiAssist || aiAssistLoading}
+            title={
+              canAiAssist
+                ? "Send observed summary statistics to OpenRouter for interpretation"
+                : "Analyze observed data, select a model, and configure an API key first"
+            }
+            className={`rounded border px-3 py-1.5 font-medium transition-colors ${
+              canAiAssist && !aiAssistLoading
+                ? "border-[#334155] bg-[#1e293b] text-[#cbd5e1] hover:text-white"
+                : "cursor-not-allowed border-[#1e293b] bg-[#111827] text-[#64748b]"
+            }`}
+          >
+            {aiAssistLoading ? "AI..." : "AI Assist"}
+          </button>
+        )}
         <button
           type="button"
           onClick={onSaveLoad}

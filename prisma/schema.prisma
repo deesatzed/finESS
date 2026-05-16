@@ -9,6 +9,8 @@ datasource db {
 
 model Analysis {
   id              String   @id @default(cuid())
+  userId          String?
+  workspaceId     String?
   query           String
   graphJson       String
   resultJson      String?
@@ -17,15 +19,70 @@ model Analysis {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
+  user                User?                @relation(fields: [userId], references: [id])
+  workspace           Workspace?           @relation(fields: [workspaceId], references: [id])
   calibrationOutcomes CalibrationOutcome[]
+
+  @@index([userId])
+  @@index([workspaceId, createdAt])
 }
 
 model CalibrationOutcome {
   id                   String   @id @default(cuid())
+  userId               String?
+  workspaceId          String?
   analysisId           String
   predictedProbability Float
   actualOutcome        Boolean
   recordedAt           DateTime @default(now())
 
-  analysis Analysis @relation(fields: [analysisId], references: [id])
+  user      User?      @relation(fields: [userId], references: [id])
+  workspace Workspace? @relation(fields: [workspaceId], references: [id])
+  analysis  Analysis   @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([workspaceId, recordedAt])
+  @@index([analysisId, workspaceId])
+}
+
+model User {
+  id           String   @id @default(cuid())
+  localSubject String   @unique
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  workspaces          Workspace[]
+  sessions            LocalSession[]
+  analyses            Analysis[]
+  calibrationOutcomes CalibrationOutcome[]
+}
+
+model Workspace {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessions            LocalSession[]
+  analyses            Analysis[]
+  calibrationOutcomes CalibrationOutcome[]
+
+  @@index([userId])
+}
+
+model LocalSession {
+  id          String   @id @default(cuid())
+  tokenHash   String   @unique
+  userId      String
+  workspaceId String
+  createdAt   DateTime @default(now())
+  expiresAt   DateTime
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([workspaceId])
 }
