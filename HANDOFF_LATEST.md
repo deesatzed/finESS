@@ -2,9 +2,9 @@
 
 **Generated:** 2026-05-16
 **Branch:** `main`
-**Current commit:** `4dcbc8bd5b346ff4d99b6c67e09cafefe62ee32e` (`4dcbc8b`)
-**Remote tracking:** `main...origin/main`
-**Working tree:** dirty; mitigation files are intentionally modified/untracked and not committed.
+**Current commit:** `0f07d39790c7522733314fd2f8a3494606d9c2ae` (`0f07d39`)
+**Remote tracking:** `main...origin/main`; pushed and verified on GitHub.
+**Working tree:** clean for committed mitigation scope; only stale historical `HANDOFF_2026-05-15.md` remains untracked and intentionally excluded.
 
 ## Verified State
 
@@ -15,7 +15,7 @@ finESS is now a verified local-only, single-user beta candidate. The app keeps t
 | ID | Status | Evidence |
 |---|---|---|
 | `IT-01` | Complete | `scripts/check-env.mjs`, `npm run check:env`, `.env.local` no longer contains `DATABASE_URL=` |
-| `IT-02` | Locally complete, not committed/pushed | Save/Load and Calibration UI files exist and build; commit/push intentionally not performed in this goal |
+| `IT-02` | Complete | Save/Load and Calibration UI files exist, build, and are included in pushed mitigation commit `1f46abcc15bf5f03ae9a97b52caf182093a28ca0` |
 | `UX-01` | Complete | `components/FirstRunPanel.tsx`; first screen offers `Try instant PE demo` |
 | `UX-02` | Complete | `components/AnalysisStatusStrip.tsx`, `lib/ui/analysis-status.ts`, lifecycle tests |
 | `UX-03` | Complete | Calibration is gated until a saved completed analysis exists; Save/Load callbacks set saved state |
@@ -44,6 +44,14 @@ finESS is now a verified local-only, single-user beta candidate. The app keeps t
 | `npm run test:e2e` | PASS; 2 E2E workflow tests |
 | `__tests__/api/routes.test.ts` | PASS; 9 API integration tests |
 
+## Remote Checkpoint
+
+- Mitigation commit: `1f46abcc15bf5f03ae9a97b52caf182093a28ca0` (`feat: verify local-only single-user beta mitigations`), pushed to `origin/main`.
+- CI dependency fix commit: `0f07d39790c7522733314fd2f8a3494606d9c2ae` (`fix: add jest config runtime dependency`), pushed to `origin/main`.
+- GitHub remote verification: `git ls-remote origin main` matched `0f07d39790c7522733314fd2f8a3494606d9c2ae`.
+- CI run: `25962996391` (`CI`, `verify`) completed successfully for `0f07d39790c7522733314fd2f8a3494606d9c2ae`: https://github.com/deesatzed/finESS/actions/runs/25962996391
+- Prior run `25962957102` failed because GitHub Actions lacked the Jest TypeScript config runtime dependency `ts-node`; `0f07d39` fixes that gap.
+
 ## Environment State
 
 - `.env` contains `DATABASE_URL` for local SQLite.
@@ -51,9 +59,9 @@ finESS is now a verified local-only, single-user beta candidate. The app keeps t
 - `scripts/check-env.mjs` rejects an empty `DATABASE_URL` in `.env.local`.
 - No real secrets were printed or added.
 
-## Dirty State
+## Local Untracked State
 
-Intentional mitigation changes include:
+The mitigation scope has been committed and pushed. Included files:
 
 - `.env.example`, `.gitignore`, `package.json`
 - `.github/workflows/ci.yml`
@@ -66,15 +74,16 @@ Intentional mitigation changes include:
 - `__tests__/api/routes.test.ts`, `__tests__/e2e/workflow.test.ts`, `__tests__/scripts/check-env.test.ts`, `__tests__/ui/analysis-status.test.ts`, `__tests__/validation/schemas.test.ts`, plus parser/executor regression tests
 - `docs/plans/2026-05-16-finess-ux-it-mitigation-plan.md`, `docs/plans/IMPLEMENTATION_PACKET.md`
 
-Unrelated/unresolved local dirty item preserved:
+Unrelated/unresolved local item preserved:
 
-- `HANDOFF_2026-05-15.md` is untracked and was not modified by this mitigation pass.
+- `HANDOFF_2026-05-15.md` is an untracked stale historical snapshot and was not modified or committed by this mitigation pass.
 
 ## Deferred Risks
 
 - `IT-07` hosted auth/tenant isolation remains deferred. Do not deploy this as a shared hosted app until auth, workspace/user scoping, and privacy review are implemented.
-- Public sharing/export URLs remain deferred; local JSON/report export was not added.
-- Production observability/audit events (`IT-12`) and formal performance guardrails (`PERF-01`) remain deferred.
+- `IT-12` structured audit/observability events remain deferred.
+- `PERF-01` simulation performance guardrails remain deferred.
+- Optional export/report object for saved analyses remains deferred.
 - The app is domain-agnostic and does not provide clinical, legal, financial, engineering, or policy advice. It preserves uncertainty framing only.
 
 ## Operator Notes
