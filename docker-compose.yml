@@ -1,0 +1,43 @@
+# finESS local dev compose.
+#
+# Currently runs a single service: the Python ensemble sidecar. The Next.js
+# app is run separately via `npm run dev` to keep hot-reload fast.
+#
+# Mounts the upstream ace_hospital package read-only so we don't need to
+# bake it into the image during early development. For CI / preprod the
+# upstream package should be installed at build time (uncomment the COPY
+# lines in services/ensemble/Dockerfile).
+#
+# Usage:
+#   docker compose up -d ensemble
+#   curl -fsS http://localhost:8001/health
+#   docker compose down
+#
+# Set ENSEMBLE_LOAD_CHRONOS=1 in your shell to enable the foundation
+# model. Default is off so the cold-start stays under ~10s.
+
+services:
+  ensemble:
+    build:
+      context: .
+      dockerfile: services/ensemble/Dockerfile
+    image: finess-ensemble:dev
+    container_name: finess-ensemble
+    ports:
+      - "8001:8001"
+    environment:
+      ENSEMBLE_LOG_LEVEL: INFO
+      ENSEMBLE_LOAD_CHRONOS: ${ENSEMBLE_LOAD_CHRONOS:-0}
+      ENSEMBLE_CHRONOS_SIZE: ${ENSEMBLE_CHRONOS_SIZE:-tiny}
+      PYTHONPATH: /opt/ace_hospital:/app
+    volumes:
+      # Mount the upstream ace_hospital source. The host path is the local
+      # dev workspace; CI should override this with a baked-in package.
+      - ../aXc11426:/opt/ace_hospital:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
