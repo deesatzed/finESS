@@ -8,6 +8,12 @@ const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX_REQUESTS = 20;
 const requestTimes: number[] = [];
 
+export function isPathAEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  const raw = env.LEGACY_PATH_A_ENABLED;
+  if (raw === undefined) return true;
+  return raw.trim().toLowerCase() === "true";
+}
+
 function isRateLimited() {
   const now = Date.now();
   while (requestTimes.length > 0 && now - requestTimes[0] > RATE_LIMIT_WINDOW_MS) {
@@ -20,6 +26,14 @@ function isRateLimited() {
 
 export async function POST(request: NextRequest) {
   try {
+    if (!isPathAEnabled()) {
+      return apiError(
+        "PATH_A_DISABLED",
+        "Path A (LLM-drafted uncertainty graphs) is disabled in this deployment. Set LEGACY_PATH_A_ENABLED=true to re-enable.",
+        404
+      );
+    }
+
     const { query, model, apiKey: sessionApiKey } = validateAnalyzeRequest(
       await readJsonBody(request)
     );

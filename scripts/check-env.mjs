@@ -40,4 +40,18 @@ if (!env.has("DATABASE_URL") && !localEnv.has("DATABASE_URL")) {
   process.exit(1);
 }
 
+const pathAFlag =
+  process.env.LEGACY_PATH_A_ENABLED ??
+  localEnv.get("LEGACY_PATH_A_ENABLED") ??
+  env.get("LEGACY_PATH_A_ENABLED");
+if (pathAFlag !== undefined) {
+  const normalized = pathAFlag.trim().toLowerCase();
+  if (normalized !== "true" && normalized !== "false") {
+    console.error(
+      `LEGACY_PATH_A_ENABLED must be exactly "true" or "false" (got "${pathAFlag}"). Path A is the LLM-drafts-the-graph route; keep "true" for local dev, "false" for hosted demos.`
+    );
+    process.exit(1);
+  }
+}
+
 console.log("Environment preflight passed");

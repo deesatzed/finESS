@@ -50,3 +50,6 @@ next-env.d.ts
 /*-command-message*.txt
 /*-export.txt
 /transcript-*.txt
+
+# claude-code worktrees and runtime state
+/.claude/
