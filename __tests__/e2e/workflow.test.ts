@@ -285,3 +285,14 @@ describe("single-user beta workflow", () => {
     });
   });
 });
+
+// TODO (M8-02 follow-up): add an end-to-end case that exercises
+// save -> load -> NodeEditor edit -> save and asserts node.source is
+// preserved as "user_override" across the round trip. Doing so today
+// would require teaching validateUncertaintyGraph in lib/validation/schemas.ts
+// to carry the `source` / `sourceNote` fields through persistence — that
+// file is owned by a different mitigation task in the current parallel
+// build, so the unit-level coverage in __tests__/ai/parse-response.test.ts
+// stands in for now. Re-enable here once the validator carries provenance.
+
+// TODO(R6-01): Add UI assertion that PathADraftBanner text appears on Path A view once a UI/browser E2E harness is wired in (current __tests__/e2e suite is API-route-only and does not render React).

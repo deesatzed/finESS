@@ -1,4 +1,9 @@
-import type { UncertaintyGraph, CombinationMethod } from "@/lib/types";
+import type {
+  UncertaintyGraph,
+  UncertaintyNode,
+  CombinationMethod,
+  NodeSource,
+} from "@/lib/types";
 
 const VALID_METHODS: CombinationMethod[] = [
   "additive",
@@ -8,6 +13,16 @@ const VALID_METHODS: CombinationMethod[] = [
 ];
 
 const VALID_DISTRIBUTIONS = ["beta", "normal", "uniform", "lognormal"];
+
+/**
+ * Sources that we accept verbatim from the model/persisted graph.
+ * Anything else (missing, null, unknown string) is normalized to "llm_prior"
+ * so downstream UI / aggregation code can safely treat node.source as set.
+ */
+const PRESERVED_SOURCES: ReadonlyArray<NodeSource> = [
+  "literature",
+  "user_override",
+];
 
 /**
  * Parse and validate an AI response into an UncertaintyGraph.
@@ -62,8 +77,12 @@ export function parseAIResponse(raw: string): UncertaintyGraph {
     obj.outputNodeId as string
   );
 
+  const normalizedNodes = (obj.nodes as Array<Record<string, unknown>>).map(
+    normalizeNode
+  );
+
   return {
-    nodes: obj.nodes as UncertaintyGraph["nodes"],
+    nodes: normalizedNodes,
     edges: obj.edges as UncertaintyGraph["edges"],
     outputNodeId: obj.outputNodeId as string,
     threshold: typeof obj.threshold === "number" ? obj.threshold : undefined,
@@ -161,6 +180,50 @@ function validateNode(node: unknown): void {
   if (typeof n.unit !== "string") {
     throw new Error(`Node '${n.id}' must have a 'unit' string`);
   }
+}
+
+/**
+ * Normalize a raw node record into an UncertaintyNode with a populated `source`.
+ *
+ * - `source`: kept verbatim if it is exactly "literature" or "user_override".
+ *   Anything else (missing, null, unknown string, or "llm_prior" itself)
+ *   resolves to "llm_prior".
+ * - `sourceNote`: preserved verbatim when present as a string; omitted otherwise.
+ *
+ * Runs after validateNode and validateGraphSemantics, so other fields are
+ * already known to satisfy the schema.
+ */
+function normalizeNode(raw: Record<string, unknown>): UncertaintyNode {
+  const rawSource = raw.source;
+  const source: NodeSource =
+    typeof rawSource === "string" &&
+    (PRESERVED_SOURCES as readonly string[]).includes(rawSource)
+      ? (rawSource as NodeSource)
+      : "llm_prior";
+
+  const normalized: UncertaintyNode = {
+    id: raw.id as string,
+    name: raw.name as string,
+    description: raw.description as string,
+    distribution: raw.distribution as UncertaintyNode["distribution"],
+    mean: raw.mean as number,
+    sd: raw.sd as number,
+    range: [
+      (raw.range as [number, number])[0],
+      (raw.range as [number, number])[1],
+    ],
+    unit: raw.unit as string,
+    source,
+  };
+
+  if (typeof raw.group === "string") {
+    normalized.group = raw.group;
+  }
+  if (typeof raw.sourceNote === "string") {
+    normalized.sourceNote = raw.sourceNote;
+  }
+
+  return normalized;
 }
 
 function validateEdge(edge: unknown): void {

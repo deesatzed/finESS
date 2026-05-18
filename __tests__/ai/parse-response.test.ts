@@ -313,4 +313,131 @@ describe("parseAIResponse", () => {
     expect(graph.threshold).toBeUndefined();
     expect(graph.narration).toBeUndefined();
   });
+
+  // M8-02: node provenance / source field
+  test("defaults missing source to llm_prior", () => {
+    const payload = JSON.stringify({
+      nodes: [
+        { id: "a", name: "A", description: "d", distribution: "beta", mean: 0.5, sd: 0.1, range: [0, 1], unit: "%" },
+      ],
+      edges: [{ id: "e1", source: "a", target: "out", method: "additive" }],
+      outputNodeId: "out",
+    });
+    const graph = parseAIResponse(payload);
+    expect(graph.nodes[0].source).toBe("llm_prior");
+    expect(graph.nodes[0].sourceNote).toBeUndefined();
+  });
+
+  test("preserves source=literature when supplied with a sourceNote", () => {
+    const payload = JSON.stringify({
+      nodes: [
+        {
+          id: "a",
+          name: "A",
+          description: "d",
+          distribution: "beta",
+          mean: 0.5,
+          sd: 0.1,
+          range: [0, 1],
+          unit: "%",
+          source: "literature",
+          sourceNote: "Smith et al. 2024, NEJM",
+        },
+      ],
+      edges: [{ id: "e1", source: "a", target: "out", method: "additive" }],
+      outputNodeId: "out",
+    });
+    const graph = parseAIResponse(payload);
+    expect(graph.nodes[0].source).toBe("literature");
+    expect(graph.nodes[0].sourceNote).toBe("Smith et al. 2024, NEJM");
+  });
+
+  test("preserves source=user_override when supplied", () => {
+    const payload = JSON.stringify({
+      nodes: [
+        {
+          id: "a",
+          name: "A",
+          description: "d",
+          distribution: "beta",
+          mean: 0.5,
+          sd: 0.1,
+          range: [0, 1],
+          unit: "%",
+          source: "user_override",
+        },
+      ],
+      edges: [{ id: "e1", source: "a", target: "out", method: "additive" }],
+      outputNodeId: "out",
+    });
+    const graph = parseAIResponse(payload);
+    expect(graph.nodes[0].source).toBe("user_override");
+  });
+
+  test("coerces bogus source string to llm_prior", () => {
+    const payload = JSON.stringify({
+      nodes: [
+        {
+          id: "a",
+          name: "A",
+          description: "d",
+          distribution: "beta",
+          mean: 0.5,
+          sd: 0.1,
+          range: [0, 1],
+          unit: "%",
+          source: "expert_panel",
+        },
+      ],
+      edges: [{ id: "e1", source: "a", target: "out", method: "additive" }],
+      outputNodeId: "out",
+    });
+    const graph = parseAIResponse(payload);
+    expect(graph.nodes[0].source).toBe("llm_prior");
+  });
+
+  test("coerces null source to llm_prior", () => {
+    const payload = JSON.stringify({
+      nodes: [
+        {
+          id: "a",
+          name: "A",
+          description: "d",
+          distribution: "beta",
+          mean: 0.5,
+          sd: 0.1,
+          range: [0, 1],
+          unit: "%",
+          source: null,
+        },
+      ],
+      edges: [{ id: "e1", source: "a", target: "out", method: "additive" }],
+      outputNodeId: "out",
+    });
+    const graph = parseAIResponse(payload);
+    expect(graph.nodes[0].source).toBe("llm_prior");
+  });
+
+  test("preserves sourceNote when source is llm_prior", () => {
+    const payload = JSON.stringify({
+      nodes: [
+        {
+          id: "a",
+          name: "A",
+          description: "d",
+          distribution: "beta",
+          mean: 0.5,
+          sd: 0.1,
+          range: [0, 1],
+          unit: "%",
+          sourceNote: "model-suggested prior",
+        },
+      ],
+      edges: [{ id: "e1", source: "a", target: "out", method: "additive" }],
+      outputNodeId: "out",
+    });
+    const graph = parseAIResponse(payload);
+    expect(graph.nodes[0].source).toBe("llm_prior");
+    expect(graph.nodes[0].sourceNote).toBe("model-suggested prior");
+  });
 });

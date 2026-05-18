@@ -39,9 +39,24 @@ export function NodeEditor({
   const handleApply = useCallback(() => {
     if (!node) return;
 
-    const updatedNodes = graph.nodes.map((n) =>
-      n.id === node.id ? { ...n, mean, sd } : n
-    );
+    const updatedNodes = graph.nodes.map((n) => {
+      if (n.id !== node.id) return n;
+      // Flip provenance to user_override when the user actually changed the
+      // distribution parameters. Preserve any existing sourceNote since the
+      // editor doesn't currently expose editing it; downstream UI can clear
+      // or relabel the note when source becomes user_override.
+      const changed = mean !== n.mean || sd !== n.sd;
+      const next: UncertaintyNode = {
+        ...n,
+        mean,
+        sd,
+        source: changed ? "user_override" : (n.source ?? "llm_prior"),
+      };
+      if (n.sourceNote !== undefined) {
+        next.sourceNote = n.sourceNote;
+      }
+      return next;
+    });
 
     onGraphUpdate({ ...graph, nodes: updatedNodes });
   }, [graph, node, mean, sd, onGraphUpdate]);

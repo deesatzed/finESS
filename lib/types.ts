@@ -12,6 +12,17 @@ export type CombinationMethod =
   | "bayesian_update"
   | "multiplicative";
 
+/**
+ * Provenance of a node's mean/SD estimates.
+ * Used by UI colour-coding (M8-07) and ensembling/aggregation logic
+ * (R6-07) to weight nodes differently based on epistemic source.
+ *
+ * - "literature": values cited from published research (sourceNote should hold the citation)
+ * - "llm_prior":  values produced by the LLM as a prior estimate (default when unspecified)
+ * - "user_override": values supplied or edited by the human user via the UI
+ */
+export type NodeSource = "literature" | "llm_prior" | "user_override";
+
 /** A single uncertainty node in the graph */
 export interface UncertaintyNode {
   id: string;
@@ -24,6 +35,16 @@ export interface UncertaintyNode {
   unit: string;
   /** Which group this node belongs to for DAG composition */
   group?: string;
+  /**
+   * Where this node's estimates came from. Optional in the type to keep
+   * pre-existing fixture and persistence shapes valid; consumers should
+   * treat `undefined` as `"llm_prior"`. Normalized boundary functions
+   * (parseAIResponse, NodeEditor save handler) always populate this field
+   * so downstream code can rely on it being set in live graphs.
+   */
+  source?: NodeSource;
+  /** Optional one-line citation or note describing the source. */
+  sourceNote?: string;
 }
 
 /**

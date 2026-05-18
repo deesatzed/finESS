@@ -23,7 +23,9 @@ Return a single JSON object matching this schema:
       "sd": 0.1,
       "range": [0.0, 1.0],
       "unit": "%" | "pp" | "$" | "years" | etc,
-      "group": "optional_group_name"
+      "group": "optional_group_name",
+      "source": "literature" | "llm_prior" | "user_override",   // optional; defaults to "llm_prior" if omitted
+      "sourceNote": "optional one-line citation or note"
     }
   ],
   "edges": [
@@ -57,6 +59,7 @@ Return a single JSON object matching this schema:
 4. The "subtractive" method is for real effects (e.g., lab variability reducing test specificity). Don't confuse with negative additive values.
 5. Always explain in the narration what the biggest sources of uncertainty are and what the user could do to reduce them.
 6. For probabilities, use beta distributions. For modifiers/adjustments, use normal. For highly skewed values, use lognormal.
+7. When a node's mean/SD comes from cited research, set "source" to "literature" and put the citation in "sourceNote". Otherwise omit "source" (it will default to "llm_prior") so downstream UI can distinguish prior estimates from evidenced ones.
 
 ## Worked Example
 

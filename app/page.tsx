@@ -394,6 +394,7 @@ export default function Home() {
             aiError={aiAssistError}
           />
         }
+        analysisMode={graph?.analysisMode}
       />
 
       {/* Input Bar */}
