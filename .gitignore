@@ -45,3 +45,8 @@ next-env.d.ts
 # prisma
 /lib/generated/prisma
 *.db
+
+# claude-code session exports (may contain secrets, transcripts, working state)
+/*-command-message*.txt
+/*-export.txt
+/transcript-*.txt

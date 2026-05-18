@@ -73,3 +73,10 @@ Local app behavior, ownership guards, deterministic tests, E2E workflows, build,
 - Code rollback: `git revert <preprod-commit>` and push.
 - Local database rollback: stop the app, back up `prisma/dev.db`, then run the schema from the reverted commit with `npx prisma db push`.
 - Runtime rollback: unset `OPENROUTER_LIVE_SMOKE`, clear session API keys by reloading the browser, and remove any local non-secret model overrides if needed.
+
+## Secret Hygiene
+
+- Rotate `OPENROUTER_API_KEY` on any suspicion of transcript exposure, screenshot leak, shared session, or accidental terminal printout. Revoke the suspect key in the OpenRouter dashboard before generating its replacement.
+- After rotation, run `OPENROUTER_LIVE_SMOKE=1 npm run smoke:openrouter` and confirm `OPENROUTER_LIVE_SMOKE_OK`.
+- Never paste the key into chat, issue trackers, commit messages, PR bodies, or screenshots. The key lives only in `.env.local`, which is gitignored.
+- Periodically verify no provider key is in tracked files: `git grep -nE "sk-or-v1-[A-Za-z0-9]{20,}" -- ':!node_modules' ':!.next'` must return nothing. The 20+ character minimum excludes placeholder examples like `sk-or-v1-your-key-here`.

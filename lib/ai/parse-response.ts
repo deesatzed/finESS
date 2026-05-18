@@ -56,6 +56,12 @@ export function parseAIResponse(raw: string): UncertaintyGraph {
     throw new Error("AI response must have a non-empty 'outputNodeId'");
   }
 
+  validateGraphSemantics(
+    obj.nodes as Array<{ id: string; mean: number; range: [number, number] }>,
+    obj.edges as Array<{ id: string; source: string; target: string; method: CombinationMethod }>,
+    obj.outputNodeId as string
+  );
+
   return {
     nodes: obj.nodes as UncertaintyGraph["nodes"],
     edges: obj.edges as UncertaintyGraph["edges"],
@@ -63,6 +69,63 @@ export function parseAIResponse(raw: string): UncertaintyGraph {
     threshold: typeof obj.threshold === "number" ? obj.threshold : undefined,
     narration: typeof obj.narration === "string" ? obj.narration : undefined,
   };
+}
+
+function validateGraphSemantics(
+  nodes: Array<{ id: string; mean: number; range: [number, number] }>,
+  edges: Array<{ id: string; source: string; target: string; method: CombinationMethod }>,
+  outputNodeId: string
+): void {
+  const declaredNodeIds = new Set(nodes.map((n) => n.id));
+  const edgeTargets = new Set(edges.map((e) => e.target));
+  const validSources = new Set<string>(declaredNodeIds);
+  for (const e of edges) validSources.add(e.target);
+
+  for (const n of nodes) {
+    if (n.range[0] > n.range[1]) {
+      throw new Error(
+        `Node '${n.id}' has inverted range [${n.range[0]}, ${n.range[1]}]`
+      );
+    }
+    if (n.mean < n.range[0] || n.mean > n.range[1]) {
+      throw new Error(
+        `Node '${n.id}' has mean ${n.mean} outside range [${n.range[0]}, ${n.range[1]}]`
+      );
+    }
+  }
+
+  for (const e of edges) {
+    if (!validSources.has(e.source)) {
+      throw new Error(`Edge '${e.id}' references unknown source '${e.source}'`);
+    }
+  }
+
+  if (!declaredNodeIds.has(outputNodeId) && !edgeTargets.has(outputNodeId)) {
+    throw new Error(
+      `outputNodeId '${outputNodeId}' is unreachable: not a declared node and not a target of any edge`
+    );
+  }
+
+  const methodsByTarget = new Map<string, string[]>();
+  for (const e of edges) {
+    if (!methodsByTarget.has(e.target)) methodsByTarget.set(e.target, []);
+    methodsByTarget.get(e.target)!.push(e.method);
+  }
+  for (const [target, methods] of methodsByTarget) {
+    if (!methods.includes("bayesian_update")) continue;
+    const bayesCount = methods.filter((m) => m === "bayesian_update").length;
+    const additiveCount = methods.filter((m) => m === "additive").length;
+    if (bayesCount < 2) {
+      throw new Error(
+        `Target '${target}' uses bayesian_update but has only ${bayesCount} bayesian_update edges (need at least 2 for sensitivity and specificity)`
+      );
+    }
+    if (additiveCount === 0 && bayesCount < 3) {
+      throw new Error(
+        `Target '${target}' uses bayesian_update without a pre-test source (need additive pre-test edges or a third bayesian_update edge)`
+      );
+    }
+  }
 }
 
 function validateNode(node: unknown): void {
