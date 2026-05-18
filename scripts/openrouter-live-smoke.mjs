@@ -53,7 +53,6 @@ const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       },
     ],
     temperature: 0,
-    max_tokens: 300,
     response_format: { type: "json_object" },
   }),
 });
