@@ -3,16 +3,11 @@ import { SYSTEM_PROMPT, buildUserMessage } from "@/lib/ai/prompt";
 import { parseAIResponse } from "@/lib/ai/parse-response";
 import { apiError, readJsonBody, validationError } from "@/lib/api/errors";
 import { validateAnalyzeRequest } from "@/lib/validation/schemas";
+import { isPathAEnabled } from "@/lib/feature-flags";
 
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX_REQUESTS = 20;
 const requestTimes: number[] = [];
-
-export function isPathAEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  const raw = env.LEGACY_PATH_A_ENABLED;
-  if (raw === undefined) return true;
-  return raw.trim().toLowerCase() === "true";
-}
 
 function isRateLimited() {
   const now = Date.now();

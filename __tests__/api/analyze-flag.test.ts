@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
-import { isPathAEnabled, POST } from "@/app/api/analyze/route";
+import { POST } from "@/app/api/analyze/route";
+import { isPathAEnabled } from "@/lib/feature-flags";
 
 function makeRequest(body: unknown) {
   return new NextRequest("http://localhost/api/analyze", {
