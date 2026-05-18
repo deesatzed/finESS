@@ -1,0 +1,22 @@
+# FastAPI sidecar core
+fastapi>=0.110.0
+uvicorn[standard]>=0.27.0
+pydantic>=2.5.0
+
+# Numeric + time-series stack required by UnifiedACEEnsemble
+# Pin numpy <2 to match ace_hospital setup.py (Chronos/PyTorch compatibility).
+numpy>=1.26.0,<2.0.0
+pandas>=2.1.0
+scipy>=1.11.0
+statsmodels>=0.14.0
+
+# Optional model dependencies. The ensemble degrades gracefully without these
+# (logs "model unavailable" for the missing ones) but the sidecar README
+# documents the trade-off. Install for the full 7-model behaviour.
+scikit-learn>=1.3.0
+xgboost>=2.0.0
+
+# Chronos foundation model is intentionally OPTIONAL at this layer:
+# - In CI / fast local runs we skip torch+chronos to keep startup cheap.
+# - Set ENSEMBLE_LOAD_CHRONOS=1 (and install chronos-forecasting + torch
+#   separately) to enable the 7th model. See README.md.
