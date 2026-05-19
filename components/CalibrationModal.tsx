@@ -59,6 +59,11 @@ interface CalibrationReady {
   ready: true;
   count: number;
   calibrationCurve: CalibrationBin[];
+  // C5b: Brier score for the same outcome set. NaN when count===0 (defensive
+  // — the ready=true branch implies count>=20 so brierScore should always be
+  // finite here). brierCount is the number of outcomes that contributed.
+  brierScore?: number;
+  brierCount?: number;
 }
 
 type CalibrationData = CalibrationNotReady | CalibrationReady;
@@ -727,6 +732,40 @@ export default function CalibrationModal({
                 >
                   Based on {calibrationData.count} recorded outcomes
                 </div>
+
+                {/* C5b: Brier score badge. Lower is better; 0 is perfect, 0.25
+                    is the always-predicts-0.5 baseline. We only show it when
+                    the API actually returned a finite score. */}
+                {typeof calibrationData.brierScore === "number" &&
+                  Number.isFinite(calibrationData.brierScore) && (
+                    <div
+                      className="flex items-center gap-2 rounded border px-3 py-2 text-xs"
+                      style={{
+                        background: "#0b1220",
+                        borderColor: BORDER,
+                        color: TEXT_SECONDARY,
+                      }}
+                      title="Brier score: mean((predicted - actual)^2). 0 is perfect, 0.25 is the always-0.5 baseline, 1 is worst."
+                    >
+                      <span style={{ color: TEXT_DIM }}>Brier score:</span>
+                      <span
+                        style={{
+                          color:
+                            calibrationData.brierScore <= 0.1
+                              ? ACCENT_GREEN
+                              : calibrationData.brierScore <= 0.25
+                              ? ACCENT_AMBER
+                              : ACCENT_RED,
+                          fontWeight: 600,
+                        }}
+                      >
+                        {calibrationData.brierScore.toFixed(3)}
+                      </span>
+                      <span style={{ color: TEXT_DIM }}>
+                        (lower is better; 0.25 = always-0.5 baseline)
+                      </span>
+                    </div>
+                  )}
 
                 {/* Canvas container */}
                 <div

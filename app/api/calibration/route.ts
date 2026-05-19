@@ -9,6 +9,8 @@ import {
   EnsembleClientError,
 } from "@/lib/services/ensemble-client";
 import { getCalibrationTestOptions } from "@/lib/calibration/test-hooks";
+import { computeReliability } from "@/lib/calibration/reliability";
+import { computeBrierScore } from "@/lib/calibration/brier";
 
 const MIN_OUTCOMES_FOR_CURVE = 20;
 
@@ -73,6 +75,36 @@ export async function GET(request: NextRequest) {
         count: b.count,
       }));
 
+    // C5a/C5b: also expose the full reliability report (with empty bins
+    // preserved per Principle 6) and Brier score. The legacy
+    // `calibrationCurve` field is kept verbatim so the existing canvas
+    // renderer in CalibrationModal stays working; the new fields drive
+    // the Brier display and the empty-state messaging.
+    const reliability = computeReliability(
+      outcomes.map((o) => ({
+        id: o.id,
+        analysisId: o.analysisId ?? "",
+        predictedProbability: o.predictedProbability,
+        actualOutcome: o.actualOutcome,
+        recordedAt:
+          o.recordedAt instanceof Date
+            ? o.recordedAt.toISOString()
+            : String(o.recordedAt),
+      }))
+    );
+    const brier = computeBrierScore(
+      outcomes.map((o) => ({
+        id: o.id,
+        analysisId: o.analysisId ?? "",
+        predictedProbability: o.predictedProbability,
+        actualOutcome: o.actualOutcome,
+        recordedAt:
+          o.recordedAt instanceof Date
+            ? o.recordedAt.toISOString()
+            : String(o.recordedAt),
+      }))
+    );
+
     await recordAuditEvent({
       type: "calibration.read",
       auth,
@@ -83,6 +115,9 @@ export async function GET(request: NextRequest) {
       ready: true,
       count: outcomes.length,
       calibrationCurve,
+      reliability,
+      brierScore: brier.score,
+      brierCount: brier.count,
     });
   } catch {
     return apiError("DATABASE_ERROR", "Failed to get calibration data", 500);
