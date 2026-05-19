@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { SYSTEM_PROMPT, buildUserMessage } from "@/lib/ai/prompt";
+import { buildSystemPrompt, buildUserMessage } from "@/lib/ai/prompt";
 import { parseAIResponse } from "@/lib/ai/parse-response";
 import { callChat, OpenRouterCallError } from "@/lib/ai/openrouter-client";
 import { apiError, readJsonBody, validationError } from "@/lib/api/errors";
@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
         model,
         apiKey,
         messages: [
-          { role: "system", content: SYSTEM_PROMPT },
+          { role: "system", content: buildSystemPrompt(query) },
           { role: "user", content: buildUserMessage(query) },
         ],
         temperature: 0.7,

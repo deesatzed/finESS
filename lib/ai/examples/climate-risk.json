@@ -1,0 +1,34 @@
+{
+  "domain": "climate-risk",
+  "keywords": [
+    "climate", "warming", "emission", "carbon", "co2", "greenhouse",
+    "temperature", "weather", "flood", "drought", "hurricane", "wildfire",
+    "sea level", "storm", "rainfall", "monsoon", "heatwave", "cooling",
+    "renewable", "solar", "wind", "policy", "paris", "ipcc", "rcp",
+    "ssp", "scenario", "mitigation", "adaptation"
+  ],
+  "userQuery": "What's the probability our coastal property portfolio sees a >$10M annual flood loss by 2035 under current emissions trajectories?",
+  "response": {
+    "nodes": [
+      { "id": "warming_pathway", "name": "Realized Warming by 2035", "description": "Degrees Celsius above pre-industrial expected by 2035. Current IPCC trajectories put us between SSP2-4.5 and SSP3-7.0; policy uncertainty drives the wide range. This is the dominant source of physical-risk variance.", "distribution": "normal", "mean": 1.6, "sd": 0.25, "range": [1.1, 2.3], "unit": "°C", "group": "physical" },
+      { "id": "sea_level_increment", "name": "Local Sea-Level Increment (cm)", "description": "Sea-level rise above 2020 baseline at the portfolio's coastline. Decadal projections vary by region; tectonics and ice-sheet melt add deep uncertainty.", "distribution": "lognormal", "mean": 12, "sd": 4, "range": [5, 35], "unit": "cm", "group": "physical" },
+      { "id": "storm_frequency", "name": "Tropical Storm Frequency Multiplier", "description": "Annual major-storm frequency relative to 2000-2020 baseline. Per-degree warming literature suggests 3-7% increase per °C of warming; significant model disagreement.", "distribution": "lognormal", "mean": 1.15, "sd": 0.12, "range": [0.85, 1.55], "unit": "x", "group": "physical" },
+      { "id": "asset_exposure", "name": "Insured Asset Value at Risk", "description": "Portion of the portfolio inside FEMA's projected 2035 100-year flood zones. Function of current property location, not climate; lower uncertainty.", "distribution": "normal", "mean": 0.42, "sd": 0.08, "range": [0.20, 0.65], "unit": "%", "group": "exposure" },
+      { "id": "loss_severity", "name": "Per-Event Loss Severity Factor", "description": "Average dollar loss per flood event as fraction of exposed asset value. Historical data from 2010-2024 storm events; assumes existing flood defenses hold.", "distribution": "beta", "mean": 0.18, "sd": 0.06, "range": [0.05, 0.40], "unit": "%", "group": "exposure" },
+      { "id": "annual_loss_probability", "name": "Probability of >$10M Annual Loss", "description": "Probability that the year's total flood-related losses exceed the $10M threshold. Compounding output of physical hazard, exposure, and severity factors.", "distribution": "beta", "mean": 0.28, "sd": 0.12, "range": [0.05, 0.70], "unit": "%", "group": "outcome" }
+    ],
+    "edges": [
+      { "id": "e1", "source": "warming_pathway", "target": "hazard_intensity", "method": "additive", "label": "Warming drives hazard" },
+      { "id": "e2", "source": "sea_level_increment", "target": "hazard_intensity", "method": "additive", "label": "Sea-level contribution" },
+      { "id": "e3", "source": "storm_frequency", "target": "hazard_intensity", "method": "multiplicative", "label": "Storm-frequency amplifier" },
+      { "id": "e4", "source": "asset_exposure", "target": "exposure_value", "method": "multiplicative", "label": "Exposed share of portfolio" },
+      { "id": "e5", "source": "loss_severity", "target": "exposure_value", "method": "multiplicative", "label": "Loss per event" },
+      { "id": "e6", "source": "hazard_intensity", "target": "output", "method": "additive", "label": "Physical-hazard channel" },
+      { "id": "e7", "source": "exposure_value", "target": "output", "method": "additive", "label": "Exposure channel" },
+      { "id": "e8", "source": "annual_loss_probability", "target": "output", "method": "additive", "label": "Aggregate loss probability" }
+    ],
+    "outputNodeId": "output",
+    "threshold": 0.5,
+    "narration": "This analysis models annual flood loss exceeding $10M for a coastal property portfolio by 2035. Largest uncertainty is the warming pathway itself — policy ambiguity dominates physical-risk variance through 2035. Sea-level rise carries deep tail uncertainty from ice-sheet behavior. The single most valuable refinement is replacing storm_frequency and sea_level_increment with region-specific projections from a downscaled climate model; generic global numbers add ~30% of the SD here. Note: this is an LLM-drafted model based on common climate-risk benchmarks, not your actual portfolio data. Edit each node to reflect your real exposure and hazard projections before drawing conclusions."
+  }
+}

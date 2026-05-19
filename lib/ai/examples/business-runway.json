@@ -1,0 +1,33 @@
+{
+  "domain": "business-runway",
+  "keywords": [
+    "startup", "runway", "burn", "revenue", "arr", "mrr", "growth", "churn",
+    "customer", "acquisition", "cac", "ltv", "valuation", "funding", "raise",
+    "round", "investor", "product", "launch", "market", "competition",
+    "pricing", "subscription", "saas", "conversion", "retention", "users",
+    "signups", "expansion", "contract", "deal", "sales", "pipeline"
+  ],
+  "userQuery": "We're a seed-stage SaaS with $40k MRR growing 12% month-over-month and 18 months of runway. What's the chance we hit $1M ARR before we need to raise again?",
+  "response": {
+    "nodes": [
+      { "id": "current_mrr", "name": "Current MRR baseline", "description": "Observed monthly recurring revenue as of last close. Low uncertainty since this is measured, not predicted.", "distribution": "normal", "mean": 40000, "sd": 1500, "range": [35000, 45000], "unit": "$", "group": "baseline" },
+      { "id": "growth_rate", "name": "Monthly Growth Rate", "description": "Compounding MoM growth. Reported 12% but venture-backed SaaS growth typically decays toward 4-8% as the early-adopter pool exhausts. Wide SD reflects this uncertainty.", "distribution": "beta", "mean": 0.09, "sd": 0.035, "range": [0.02, 0.18], "unit": "%", "group": "growth" },
+      { "id": "churn_rate", "name": "Monthly Logo Churn", "description": "Customers leaving each month. SaaS benchmarks vary widely by segment (SMB: 5-7%, mid-market: 1-2%). Unknown which segment dominates without cohort data.", "distribution": "beta", "mean": 0.035, "sd": 0.015, "range": [0.005, 0.08], "unit": "%", "group": "growth" },
+      { "id": "expansion_revenue", "name": "Net Revenue Retention Lift", "description": "Existing-customer expansion through upsells and seat growth. Best-in-class SaaS hits 120%+ NRR; median is 105%. Highly dependent on packaging.", "distribution": "normal", "mean": 0.015, "sd": 0.01, "range": [-0.01, 0.05], "unit": "pp", "group": "growth" },
+      { "id": "months_remaining", "name": "Months in Runway", "description": "Stated runway is 18 months. Low uncertainty assuming burn stays constant; sensitivity to hiring decisions not modeled here.", "distribution": "normal", "mean": 18, "sd": 1.5, "range": [12, 24], "unit": "months", "group": "horizon" },
+      { "id": "target_arr_threshold", "name": "ARR Goal Indicator", "description": "Binary-flavored: did the projected ARR at month 18 hit $1M? Modeled as a continuous probability through Monte Carlo to surface uncertainty in the goal achievement.", "distribution": "beta", "mean": 0.55, "sd": 0.18, "range": [0.05, 0.95], "unit": "%", "group": "outcome" }
+    ],
+    "edges": [
+      { "id": "e1", "source": "current_mrr", "target": "projected_arr", "method": "additive", "label": "Starting position" },
+      { "id": "e2", "source": "growth_rate", "target": "projected_arr", "method": "additive", "label": "Compounding growth contribution" },
+      { "id": "e3", "source": "expansion_revenue", "target": "projected_arr", "method": "additive", "label": "Net revenue retention lift" },
+      { "id": "e4", "source": "churn_rate", "target": "projected_arr", "method": "subtractive", "label": "Logo churn drag" },
+      { "id": "e5", "source": "months_remaining", "target": "projected_arr", "method": "multiplicative", "label": "Time-window scaling" },
+      { "id": "e6", "source": "target_arr_threshold", "target": "output", "method": "additive", "label": "Probability of hitting $1M ARR" },
+      { "id": "e7", "source": "projected_arr", "target": "output", "method": "additive", "label": "Composed ARR projection signal" }
+    ],
+    "outputNodeId": "output",
+    "threshold": 0.5,
+    "narration": "This analysis models reaching $1M ARR within the runway window. The dominant uncertainty is monthly growth rate — seed-stage 12% MoM rarely sustains; decay toward 4-8% pulls the projection down sharply. Churn matters more than founders typically estimate at this stage because compounding turns small percentage differences into large dollar gaps over 18 months. The single most valuable next step is segmenting churn by cohort and customer size; the SD on churn collapses dramatically once that's measurable. Note: this is an LLM-drafted model based on common SaaS benchmarks, not your actual data. Edit each node's mean/SD to reflect your real numbers before drawing conclusions."
+  }
+}
