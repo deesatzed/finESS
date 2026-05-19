@@ -14,7 +14,7 @@
  *   same contract — if you change semantics here, update the mirror.
  */
 
-const DEFAULT_TIMEOUT_MS = 30_000;
+const DEFAULT_TIMEOUT_MS = 60_000;
 const DEFAULT_PER_CALL_BUDGET_USD = 0.05;
 const RETRY_BACKOFF_MS = 500;
 const ENDPOINT = "https://openrouter.ai/api/v1/chat/completions";

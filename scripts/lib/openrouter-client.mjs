@@ -4,7 +4,7 @@
 // without bringing a TS transpiler into the script runner. If you change
 // semantics in lib/ai/openrouter-client.ts, update this file too.
 
-const DEFAULT_TIMEOUT_MS = 30_000;
+const DEFAULT_TIMEOUT_MS = 60_000;
 const DEFAULT_PER_CALL_BUDGET_USD = 0.05;
 const RETRY_BACKOFF_MS = 500;
 const ENDPOINT = "https://openrouter.ai/api/v1/chat/completions";
