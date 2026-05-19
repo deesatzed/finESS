@@ -147,6 +147,104 @@ export interface SimulationResult {
   nodeSamples: Record<string, number[]>;
 }
 
+// ============================================================
+// C3a: Longitudinal sampler types
+// ============================================================
+
+/**
+ * Typed AST for state-transition recurrences. NEVER eval'd from strings.
+ *
+ * Grammar (each expression evaluates to a number):
+ *   expr := literal(value)
+ *         | state(name)                          // reads previous-step state variable
+ *         | sample(nodeId)                       // reads this-step sampled node value
+ *         | add(left, right)
+ *         | subtract(left, right)
+ *         | multiply(left, right)
+ *         | divide(left, right)                  // throws on right == 0
+ *         | max(left, right)
+ *         | min(left, right)
+ *         | ifGreater(left, right, then, else)   // selects `then` if left > right else `else`
+ *
+ * The evaluator is a pure recursive interpreter. No `eval`, no `Function`
+ * constructor, no string-to-code concatenation.
+ */
+export type RecurrenceExpr =
+  | { kind: "literal"; value: number }
+  | { kind: "state"; name: string }
+  | { kind: "sample"; nodeId: string }
+  | { kind: "add"; left: RecurrenceExpr; right: RecurrenceExpr }
+  | { kind: "subtract"; left: RecurrenceExpr; right: RecurrenceExpr }
+  | { kind: "multiply"; left: RecurrenceExpr; right: RecurrenceExpr }
+  | { kind: "divide"; left: RecurrenceExpr; right: RecurrenceExpr }
+  | { kind: "max"; left: RecurrenceExpr; right: RecurrenceExpr }
+  | { kind: "min"; left: RecurrenceExpr; right: RecurrenceExpr }
+  | {
+      kind: "ifGreater";
+      left: RecurrenceExpr;
+      right: RecurrenceExpr;
+      then: RecurrenceExpr;
+      else: RecurrenceExpr;
+    };
+
+/**
+ * State-transition recurrence: a map from state variable name → expression
+ * that produces the next-step value. Variables not mentioned carry through
+ * unchanged. All RHS evaluations within a step see a snapshot of the
+ * previous-step state, so update order does not matter.
+ */
+export interface TransitionRecurrence {
+  updates: Record<string, RecurrenceExpr>;
+}
+
+/**
+ * A longitudinal graph: an UncertaintyGraph plus per-step state transitions.
+ * Used by the 30-year drawdown scenarios (hometier-app2-style) where the
+ * single-shot DAG cannot express path-dependent state carryover.
+ *
+ * Each Monte Carlo sample now runs `horizonSteps` inner steps. At each
+ * step we sample every node fresh, evaluate the recurrence against the
+ * just-sampled values plus the previous-step state, and record the new
+ * state into per-step accumulators.
+ */
+export interface LongitudinalGraph extends UncertaintyGraph {
+  /** Number of inner steps per Monte Carlo sample (e.g. 30 for a 30-year horizon). */
+  horizonSteps: number;
+  stateTransition: {
+    initialState: Record<string, number>;
+    recurrence: TransitionRecurrence;
+  };
+  /**
+   * Optional: which state variable's final value is the simulation's
+   * headline output. Falls back to graph.outputNodeId when absent — this
+   * lets a longitudinal graph also expose a DAG-computed output if the
+   * caller prefers.
+   */
+  outputStateVar?: string;
+}
+
+/**
+ * A longitudinal simulation result extends SimulationResult with per-step
+ * traces. The parent fields (mean, median, ciLow/High, pAboveThreshold,
+ * samples) describe the FINAL-step value of the headline variable
+ * (`outputStateVar` if set, else the DAG-computed `outputNodeId`).
+ *
+ * pathTraces is keyed by state-variable name. Each array has length
+ * `horizonSteps + 1`: index 0 is the initialState value, index N is the
+ * value after N transition applications.
+ */
+export interface LongitudinalResult extends SimulationResult {
+  pathTraces: Record<
+    string,
+    {
+      perStepMean: number[];
+      perStepCiLow: number[];
+      perStepCiHigh: number[];
+    }
+  >;
+  horizonSteps: number;
+}
+
 /**
  * Sensitivity analysis result for a single node.
  * Both methods are always computed:
