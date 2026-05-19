@@ -3,6 +3,7 @@
 import { useCallback, useState } from "react";
 import { ForecastInputForm, type ForecastFormSubmit } from "@/components/ForecastInputForm";
 import { ForecastResultView } from "@/components/ForecastResultView";
+import CalibrationModal from "@/components/CalibrationModal";
 import type { ForecastResponse } from "@/lib/forecast/types";
 
 type LoadingPhase = "idle" | "training" | "predicting";
@@ -19,8 +20,10 @@ interface ForecastPanelProps {
  *   1. Renders the positive honesty banner.
  *   2. Renders the input form OR the loading state OR the result view.
  *   3. Calls POST /api/forecast.
- *   4. Tracks the optional "save for calibration later" intent locally
- *      (R6-06 will wire the actual persistence).
+ *   4. Opens the CalibrationModal in forecast mode when the user clicks
+ *      "Save outcome" — this is what closes the R6-06 learning loop.
+ *   5. Tracks the observation_count returned by /api/calibration so the
+ *      next forecast view can show "learning active" without re-polling.
  */
 export function ForecastPanel({ apiPath = "/api/forecast" }: ForecastPanelProps) {
   const [phase, setPhase] = useState<LoadingPhase>("idle");
@@ -28,6 +31,10 @@ export function ForecastPanel({ apiPath = "/api/forecast" }: ForecastPanelProps)
   const [targetColumn, setTargetColumn] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
+  const [calibrationOpen, setCalibrationOpen] = useState<boolean>(false);
+  const [observationCountByColumn, setObservationCountByColumn] = useState<
+    Record<string, number>
+  >({});
 
   const handleSubmit = useCallback(
     async (input: ForecastFormSubmit) => {
@@ -58,7 +65,17 @@ export function ForecastPanel({ apiPath = "/api/forecast" }: ForecastPanelProps)
           setPhase("idle");
           return;
         }
-        setResult(data as ForecastResponse);
+        const parsed = data as ForecastResponse;
+        setResult(parsed);
+        // Cache the sidecar-reported observation_count for this column so
+        // we can render the "Learning active" indicator even if the user
+        // navigates away and comes back to a fresh forecast.
+        if (parsed.forecast?.observation_count !== undefined) {
+          setObservationCountByColumn((prev) => ({
+            ...prev,
+            [input.targetColumn]: parsed.forecast.observation_count ?? 0,
+          }));
+        }
         setPhase("idle");
       } catch (err) {
         setError(err instanceof Error ? err.message : "Forecast request failed");
@@ -77,16 +94,36 @@ export function ForecastPanel({ apiPath = "/api/forecast" }: ForecastPanelProps)
     setPhase("idle");
   }, []);
 
-  const handleSaveForCalibration = useCallback((forecastId: string) => {
-    setSavedIds((prev) => {
-      if (prev.has(forecastId)) return prev;
-      const next = new Set(prev);
-      next.add(forecastId);
-      return next;
-    });
+  const handleOpenCalibration = useCallback(() => {
+    setCalibrationOpen(true);
   }, []);
 
+  const handleForecastOutcomeRecorded = useCallback(
+    (count: number) => {
+      // Mark this forecast id as saved + bump the per-column counter so
+      // the "learning active" indicator updates immediately.
+      if (result) {
+        setSavedIds((prev) => {
+          if (prev.has(result.forecastId)) return prev;
+          const next = new Set(prev);
+          next.add(result.forecastId);
+          return next;
+        });
+      }
+      if (targetColumn) {
+        setObservationCountByColumn((prev) => ({
+          ...prev,
+          [targetColumn]: count,
+        }));
+      }
+    },
+    [result, targetColumn],
+  );
+
   const loading = phase !== "idle";
+  const currentObservationCount = targetColumn
+    ? observationCountByColumn[targetColumn] ?? 0
+    : 0;
 
   return (
     <div className="h-full overflow-y-auto px-4 py-4">
@@ -125,8 +162,9 @@ export function ForecastPanel({ apiPath = "/api/forecast" }: ForecastPanelProps)
             <ForecastResultView
               response={result}
               targetColumn={targetColumn}
-              onSaveForCalibration={handleSaveForCalibration}
+              onOpenCalibration={handleOpenCalibration}
               savedForCalibration={savedIds.has(result.forecastId)}
+              observationCount={currentObservationCount}
             />
             <div>
               <button
@@ -140,6 +178,20 @@ export function ForecastPanel({ apiPath = "/api/forecast" }: ForecastPanelProps)
           </>
         )}
       </div>
+
+      {result && (
+        <CalibrationModal
+          isOpen={calibrationOpen}
+          onClose={() => setCalibrationOpen(false)}
+          forecast={{
+            forecastId: result.forecastId,
+            targetColumn,
+            ensemblePrediction: result.forecast.prediction,
+            modelPredictions: result.forecast.individual_predictions,
+          }}
+          onForecastOutcomeRecorded={handleForecastOutcomeRecorded}
+        />
+      )}
     </div>
   );
 }

@@ -13,7 +13,9 @@ export type AuditEventType =
   | "real_data.assist"
   | "real_data.assist_denied"
   | "ai_provider_call"
-  | "forecast_request";
+  | "analyze_multi_proposed"
+  | "forecast_request"
+  | "forecast_outcome_recorded";
 
 interface AuditEventInput {
   type: AuditEventType;

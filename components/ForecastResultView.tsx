@@ -9,10 +9,12 @@ import {
 interface ForecastResultViewProps {
   response: ForecastResponse;
   targetColumn: string;
-  /** Hook for the future calibration save action (R6-06). Receives the forecastId. */
-  onSaveForCalibration?: (forecastId: string) => void;
-  /** Indicates the calibration handler has stored the id locally. */
+  /** Click handler for "Save outcome" — parent owns the modal lifecycle. */
+  onOpenCalibration?: (forecastId: string) => void;
+  /** True if the user has already recorded an outcome for this forecast. */
   savedForCalibration?: boolean;
+  /** R6-06: number of outcomes accumulated for this column on the sidecar. */
+  observationCount?: number;
 }
 
 function formatNumber(value: number, fractionDigits = 2): string {
@@ -32,8 +34,9 @@ function percentage(value: number): string {
 export function ForecastResultView({
   response,
   targetColumn,
-  onSaveForCalibration,
+  onOpenCalibration,
   savedForCalibration = false,
+  observationCount = 0,
 }: ForecastResultViewProps) {
   const { forecast, forecastId, slsqpWeights } = response;
 
@@ -52,6 +55,14 @@ export function ForecastResultView({
   );
 
   const slsqpEntries = useMemo(() => Object.entries(slsqpWeights), [slsqpWeights]);
+
+  // R6-06: prefer the live observation_count attached to the forecast
+  // response (when /predict reports it) over the one polled from /priors.
+  const liveObservationCount =
+    forecast.observation_count !== undefined
+      ? forecast.observation_count
+      : observationCount;
+  const priorsApplied = forecast.priors_applied === true;
 
   return (
     <div className="flex flex-col gap-4 text-[#e2e8f0]">
@@ -73,6 +84,20 @@ export function ForecastResultView({
           </div>
         </div>
       </section>
+
+      {liveObservationCount > 0 && (
+        <section
+          className="rounded-lg border border-emerald-700 bg-emerald-900/20 px-4 py-3 text-xs text-emerald-200"
+          role="status"
+        >
+          <p className="leading-5">
+            <span className="font-semibold">Learning active.</span>{" "}
+            {priorsApplied
+              ? `Weights re-optimised against ${liveObservationCount} recorded outcome${liveObservationCount === 1 ? "" : "s"} for ${targetColumn}.`
+              : `${liveObservationCount} outcome${liveObservationCount === 1 ? "" : "s"} recorded for ${targetColumn}; weights will re-optimise on next forecast once enough per-model history accumulates.`}
+          </p>
+        </section>
+      )}
 
       <section className="rounded-lg border border-[#1e293b] bg-[#0f1629] p-4">
         <h4 className="mb-2 text-xs font-medium uppercase tracking-wider text-[#64748b]">
@@ -175,14 +200,15 @@ export function ForecastResultView({
         </span>
         <button
           type="button"
-          onClick={() => onSaveForCalibration?.(forecastId)}
-          disabled={savedForCalibration || !onSaveForCalibration}
+          onClick={() => onOpenCalibration?.(forecastId)}
+          disabled={savedForCalibration || !onOpenCalibration}
           className="rounded border border-[#334155] bg-[#1e293b] px-3 py-1.5 text-xs font-medium text-[#cbd5e1] hover:text-white disabled:cursor-not-allowed disabled:text-[#64748b]"
         >
-          {savedForCalibration ? "Saved for calibration" : "Save for calibration later"}
+          {savedForCalibration ? "Outcome saved" : "Save outcome"}
         </button>
         <span className="text-[10px] text-[#64748b]">
-          R6-06 will wire this id back to the ensemble calibration loop.
+          Recording the real observed value updates the ensemble&apos;s
+          learned weights via the calibration loop.
         </span>
       </section>
     </div>

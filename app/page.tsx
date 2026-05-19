@@ -11,6 +11,7 @@ import { SaveLoadModal } from "@/components/SaveLoadModal";
 import CalibrationModal from "@/components/CalibrationModal";
 import { RealDataPanel } from "@/components/RealDataPanel";
 import { ForecastPanel } from "@/components/ForecastPanel";
+import { MultiProposalsPanel } from "@/components/MultiProposalsPanel";
 import NodeNetwork from "@/components/panels/NodeNetwork";
 import LiveDistribution from "@/components/panels/LiveDistribution";
 import SensitivityRadar from "@/components/panels/SensitivityRadar";
@@ -22,8 +23,19 @@ import { getAnalysisStatus } from "@/lib/ui/analysis-status";
 import type { ObservedAnalysisResult } from "@/lib/real-data/analyze";
 import type { RealDataInsight } from "@/lib/real-data/assist";
 import type { UncertaintyGraph, SimulationResult, SensitivityResult } from "@/lib/types";
+import type { ProposalResult } from "@/lib/ai/multi-proposer";
 
-type DashboardMode = "simulation" | "observed" | "forecast";
+// R6-02: "simulation-multi" is a sibling of "simulation" that fans out the
+// query to every configured proposer and renders MultiProposalsPanel in
+// place of the Dashboard. Dashboard.tsx itself stays untouched.
+type DashboardMode = "simulation" | "simulation-multi" | "observed" | "forecast";
+
+interface MultiSummary {
+  successCount: number;
+  errorCount: number;
+  totalCostUsd: number;
+  wallTimeMs: number;
+}
 
 function getApiErrorMessage(data: unknown, fallback: string) {
   if (
@@ -70,6 +82,8 @@ export default function Home() {
   const [aiInsight, setAiInsight] = useState<RealDataInsight | null>(null);
   const [aiAssistError, setAiAssistError] = useState<string | null>(null);
   const [aiAssistLoading, setAiAssistLoading] = useState(false);
+  const [multiProposals, setMultiProposals] = useState<ProposalResult[] | null>(null);
+  const [multiSummary, setMultiSummary] = useState<MultiSummary | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const sim = useSimulation();
@@ -125,9 +139,12 @@ export default function Home() {
   // analysisMode passed to Dashboard:
   // - "forecast" takes precedence so the ForecastPanel renders in place of
   //   the six-panel grid.
+  // - "simulation-multi" intentionally maps to undefined here — the
+  //   MultiProposalsPanel renders ABOVE the Dashboard region (Dashboard is
+  //   short-circuited), so no banner from the regular path is needed.
   // - Otherwise we defer to the active graph's analysisMode (set by Path A
   //   or Path B flows).
-  const dashboardAnalysisMode: DashboardMode | undefined =
+  const dashboardAnalysisMode: "simulation" | "observed" | "forecast" | undefined =
     mode === "forecast" ? "forecast" : graph?.analysisMode;
 
   const analysisStatus = useMemo(
@@ -181,6 +198,51 @@ export default function Home() {
       }
     },
     [model, runSimulation, sessionApiKey]
+  );
+
+  const handleMultiSubmit = useCallback(
+    async (query: string) => {
+      setIsAnalyzing(true);
+      setError(null);
+      setCurrentQuery(query);
+      setMultiProposals(null);
+      setMultiSummary(null);
+      try {
+        const res = await fetch("/api/analyze/multi", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            query,
+            apiKey: sessionApiKey || undefined,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          setError(getApiErrorMessage(data, "Multi-proposer failed"));
+          return;
+        }
+        setMultiProposals(data.proposals as ProposalResult[]);
+        setMultiSummary(data.summary as MultiSummary);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Network error");
+      } finally {
+        setIsAnalyzing(false);
+      }
+    },
+    [sessionApiKey]
+  );
+
+  const handleUseProposerGraph = useCallback(
+    (proposerModel: string, proposerGraph: UncertaintyGraph) => {
+      setMode("simulation");
+      setCurrentQuery(
+        currentQuery
+          ? `${currentQuery} (from ${proposerModel})`
+          : `Multi-proposer pick: ${proposerModel}`
+      );
+      runSimulation(proposerGraph);
+    },
+    [currentQuery, runSimulation]
   );
 
   const handleRunExample = useCallback(() => {
@@ -319,7 +381,7 @@ export default function Home() {
         )}
       </header>
 
-      {/* Mode toggle: simulation | observed | forecast */}
+      {/* Mode toggle: simulation | simulation-multi | observed | forecast */}
       <div
         role="tablist"
         aria-label="Analysis mode"
@@ -330,6 +392,7 @@ export default function Home() {
             { id: "observed", label: "Real Data Mode" },
             { id: "forecast", label: "Forecast Mode" },
             { id: "simulation", label: "Simulation (Path A)" },
+            { id: "simulation-multi", label: "Multi-Proposer (Path A)" },
           ] as Array<{ id: DashboardMode; label: string }>
         ).map((option) => {
           const active = mode === option.id;
@@ -379,74 +442,92 @@ export default function Home() {
         aiAssistLoading={aiAssistLoading}
       />
 
-      {/* Dashboard */}
-      <Dashboard
-        nodeNetwork={
-          graph === null && sim.phase === "idle" ? (
-            <RealDataPanel
-              onAnalyze={handleRunObservedData}
-              onRunLegacyDemo={handleRunExample}
+      {/* Multi-proposer view replaces the Dashboard when active. */}
+      {mode === "simulation-multi" ? (
+        <div className="flex-1 min-h-0 overflow-y-auto p-2">
+          {multiProposals ? (
+            <MultiProposalsPanel
+              proposals={multiProposals}
+              summary={multiSummary ?? undefined}
+              onUseGraph={handleUseProposerGraph}
             />
           ) : (
-            <NodeNetwork
-              graph={graph}
+            <div className="rounded-md border border-[#1e293b] bg-[#0f1629] p-6 text-center text-xs text-[#64748b]">
+              Enter a query below to fan it out to every configured proposer.
+              Each LLM will return a graph (or an error); disagreement is
+              surfaced explicitly.
+            </div>
+          )}
+        </div>
+      ) : (
+        <Dashboard
+          nodeNetwork={
+            graph === null && sim.phase === "idle" ? (
+              <RealDataPanel
+                onAnalyze={handleRunObservedData}
+                onRunLegacyDemo={handleRunExample}
+              />
+            ) : (
+              <NodeNetwork
+                graph={graph}
+                sensitivity={activeSensitivity}
+                phase={activePhase}
+                progress={observedResult ? 1 : sim.progress}
+                onNodeClick={handleNodeClick}
+              />
+            )
+          }
+          liveDistribution={
+            <LiveDistribution
+              samples={displaySamples}
+              result={activeResult}
+              phase={activePhase}
+              threshold={graph?.threshold}
+            />
+          }
+          sensitivityRadar={
+            <SensitivityRadar
+              sensitivity={activeSensitivity}
+              phase={activePhase}
+            />
+          }
+          gaugePanel={
+            <GaugePanel
+              result={activeResult}
               sensitivity={activeSensitivity}
               phase={activePhase}
               progress={observedResult ? 1 : sim.progress}
-              onNodeClick={handleNodeClick}
             />
-          )
-        }
-        liveDistribution={
-          <LiveDistribution
-            samples={displaySamples}
-            result={activeResult}
-            phase={activePhase}
-            threshold={graph?.threshold}
-          />
-        }
-        sensitivityRadar={
-          <SensitivityRadar
-            sensitivity={activeSensitivity}
-            phase={activePhase}
-          />
-        }
-        gaugePanel={
-          <GaugePanel
-            result={activeResult}
-            sensitivity={activeSensitivity}
-            phase={activePhase}
-            progress={observedResult ? 1 : sim.progress}
-          />
-        }
-        spectrumBars={
-          <SpectrumBars
-            graph={graph}
-            nodeSamples={activeResult?.nodeSamples ?? null}
-            phase={activePhase}
-          />
-        }
-        narrationStream={
-          <NarrationStream
-            phase={activePhase}
-            progress={observedResult ? 1 : sim.progress}
-            narration={graph?.narration ?? null}
-            result={activeResult}
-            sensitivity={activeSensitivity}
-            threshold={graph?.threshold}
-            analysisMode={graph?.analysisMode}
-            aiInsight={aiInsight}
-            aiError={aiAssistError}
-          />
-        }
-        analysisMode={dashboardAnalysisMode}
-        forecastPanel={mode === "forecast" ? <ForecastPanel /> : null}
-      />
+          }
+          spectrumBars={
+            <SpectrumBars
+              graph={graph}
+              nodeSamples={activeResult?.nodeSamples ?? null}
+              phase={activePhase}
+            />
+          }
+          narrationStream={
+            <NarrationStream
+              phase={activePhase}
+              progress={observedResult ? 1 : sim.progress}
+              narration={graph?.narration ?? null}
+              result={activeResult}
+              sensitivity={activeSensitivity}
+              threshold={graph?.threshold}
+              analysisMode={graph?.analysisMode}
+              aiInsight={aiInsight}
+              aiError={aiAssistError}
+            />
+          }
+          analysisMode={dashboardAnalysisMode}
+          forecastPanel={mode === "forecast" ? <ForecastPanel /> : null}
+        />
+      )}
 
       {/* Input Bar (hidden in forecast mode; forecast has its own form) */}
       {mode !== "forecast" && (
         <InputBar
-          onSubmit={handleSubmit}
+          onSubmit={mode === "simulation-multi" ? handleMultiSubmit : handleSubmit}
           isLoading={isAnalyzing || sim.phase === "running"}
           onRunExample={handleRunExample}
           inputRef={inputRef}

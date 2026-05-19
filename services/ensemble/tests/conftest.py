@@ -41,7 +41,9 @@ def fixture_rows(fixture_df: pd.DataFrame):
 @pytest.fixture()
 def client() -> TestClient:
     # Reset the registry between tests so /train state is deterministic.
+    # R6-06: also clear the cached training metadata and observation counts.
     registry.ensemble = None
     registry.ema = None
-    registry.ema_counts = {}
+    registry.last_train_kwargs = {}
+    registry.ema_observation_count = {}
     return TestClient(app)

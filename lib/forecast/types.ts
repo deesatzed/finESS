@@ -1,5 +1,5 @@
 /**
- * Type definitions for Forecast Mode (R6-05).
+ * Type definitions for Forecast Mode (R6-05 / R6-06).
  *
  * Mirrors the EnsemblePrediction shape returned by the Python ensemble
  * sidecar (services/ensemble) and re-exported from
@@ -30,6 +30,18 @@ export interface ForecastPrediction {
   rho: number;
   /** Upstream ensemble mode ("production", "research", ...). */
   mode: string;
+  /**
+   * R6-06: whether the SLSQP weights for this prediction were re-optimised
+   * against EMA-derived Beta priors before predicting. Absent on responses
+   * from older sidecar versions; treat undefined as false.
+   */
+  priors_applied?: boolean;
+  /**
+   * R6-06: number of /outcome calls accumulated for this column on the
+   * sidecar. Used by the UI's "Learning active" indicator. Absent on
+   * responses from older sidecar versions.
+   */
+  observation_count?: number;
 }
 
 /**
@@ -47,7 +59,8 @@ export interface ForecastRequest {
  *
  * `forecastId` is a server-generated opaque string the client should keep
  * if the user wants to later attach a calibration outcome to this
- * forecast (R6-06 wires the actual save).
+ * forecast (R6-06 uses this id to thread outcomes back into the ensemble
+ * sidecar's EMA learner).
  */
 export interface ForecastResponse {
   forecast: ForecastPrediction;

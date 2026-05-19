@@ -6,12 +6,38 @@ import { ensureLocalSession } from "@/lib/auth/client";
 // ============================================================
 // CalibrationModal — Record outcomes & view calibration curve
 // ============================================================
+//
+// Two modes, picked by which props are supplied:
+//
+//   * "analysis" — the default; pass `analysisId` + `predictedProbability`.
+//     The legacy Path A flow. POSTs {analysisId, predictedProbability,
+//     actualOutcome:true|false}.
+//
+//   * "forecast" — pass the `forecast` prop instead. The user enters the
+//     real observed numeric value; the modal forwards it together with the
+//     per-base-model predictions to /api/calibration, which in turn calls
+//     the ensemble sidecar's /outcome so the next forecast on the same
+//     column re-optimises SLSQP weights against the new Beta priors.
+
+interface ForecastCalibrationContext {
+  forecastId: string;
+  targetColumn: string;
+  /** The ensemble's combined prediction (informational only). */
+  ensemblePrediction: number;
+  /** Per-base-model predictions returned by /api/forecast. Required. */
+  modelPredictions: Record<string, number>;
+}
 
 interface CalibrationModalProps {
   isOpen: boolean;
   onClose: () => void;
-  analysisId: string | null;
-  predictedProbability: number | null;
+  /** Analysis branch — supply both for Path A graphs. */
+  analysisId?: string | null;
+  predictedProbability?: number | null;
+  /** Forecast branch (R6-06) — supply for Forecast Mode results. */
+  forecast?: ForecastCalibrationContext | null;
+  /** Called after a successful forecast outcome save with the new observation count. */
+  onForecastOutcomeRecorded?: (observationCount: number) => void;
 }
 
 // -- API response types ---------------------------------------
@@ -37,6 +63,13 @@ interface CalibrationReady {
 
 type CalibrationData = CalibrationNotReady | CalibrationReady;
 
+interface RecordOutcomeResponse {
+  id: string;
+  sidecarStatus?: "updated" | "down" | "error" | "skipped";
+  observationCount?: number;
+  sidecarReason?: string;
+}
+
 // -- Color constants ------------------------------------------
 
 const BG = "#0f1629";
@@ -47,6 +80,7 @@ const TEXT_DIM = "#64748b";
 const ACCENT_BLUE = "#3b82f6";
 const ACCENT_GREEN = "#22c55e";
 const ACCENT_RED = "#ef4444";
+const ACCENT_AMBER = "#f59e0b";
 const CANVAS_BG = "#0f1629";
 const GRID_LINE = "#1e293b";
 const DOT_COLOR = "#3b82f6";
@@ -83,9 +117,13 @@ function getApiErrorMessage(data: unknown, fallback: string) {
 export default function CalibrationModal({
   isOpen,
   onClose,
-  analysisId,
-  predictedProbability,
+  analysisId = null,
+  predictedProbability = null,
+  forecast = null,
+  onForecastOutcomeRecorded,
 }: CalibrationModalProps) {
+  const mode: "forecast" | "analysis" = forecast ? "forecast" : "analysis";
+
   // -- State --------------------------------------------------
 
   const [calibrationData, setCalibrationData] = useState<CalibrationData | null>(null);
@@ -96,6 +134,12 @@ export default function CalibrationModal({
   const [recordSuccess, setRecordSuccess] = useState(false);
   const [recordError, setRecordError] = useState<string | null>(null);
   const [recordedThisOpen, setRecordedThisOpen] = useState(false);
+  const [sidecarBanner, setSidecarBanner] = useState<
+    null | { status: "updated" | "down" | "error" | "skipped"; observationCount?: number; reason?: string }
+  >(null);
+
+  // Forecast-mode input.
+  const [actualValueStr, setActualValueStr] = useState<string>("");
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -128,8 +172,14 @@ export default function CalibrationModal({
       setRecordSuccess(false);
       setRecordError(null);
       setRecordedThisOpen(false);
+      setSidecarBanner(null);
+      // Default the forecast actual to the ensemble's own prediction so the
+      // user can tweak it instead of typing from scratch.
+      setActualValueStr(
+        forecast ? formatNumberInput(forecast.ensemblePrediction) : "",
+      );
     }
-  }, [isOpen, fetchCalibration]);
+  }, [isOpen, fetchCalibration, forecast]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -140,9 +190,9 @@ export default function CalibrationModal({
     return () => window.removeEventListener("keydown", handler);
   }, [isOpen, onClose]);
 
-  // -- Record outcome -----------------------------------------
+  // -- Record outcome (analysis branch) -----------------------
 
-  const recordOutcome = async (actualOutcome: boolean) => {
+  const recordAnalysisOutcome = async (actualOutcome: boolean) => {
     if (!analysisId || predictedProbability === null || recordedThisOpen) return;
 
     setIsRecording(true);
@@ -168,7 +218,71 @@ export default function CalibrationModal({
 
       setRecordSuccess(true);
       setRecordedThisOpen(true);
-      // Refresh calibration data after recording
+      await fetchCalibration();
+    } catch (err) {
+      setRecordError(err instanceof Error ? err.message : "Failed to record outcome");
+    } finally {
+      setIsRecording(false);
+    }
+  };
+
+  // -- Record outcome (forecast branch) -----------------------
+
+  const recordForecastOutcome = async () => {
+    if (!forecast || recordedThisOpen) return;
+
+    const trimmed = actualValueStr.trim();
+    const numeric = Number(trimmed);
+    if (!trimmed || !Number.isFinite(numeric)) {
+      setRecordError("Enter the observed numeric value for the target column.");
+      return;
+    }
+
+    setIsRecording(true);
+    setRecordError(null);
+    setRecordSuccess(false);
+    setSidecarBanner(null);
+
+    try {
+      await ensureLocalSession();
+      // Derive a boolean for the calibration curve from the numeric value.
+      // "Hit within 10% of the ensemble prediction" is the convention. This
+      // is informational only — the load-bearing signal is the numeric
+      // actualValue forwarded to the sidecar.
+      const tolerance = Math.max(Math.abs(forecast.ensemblePrediction) * 0.1, 0.5);
+      const actualOutcome =
+        Math.abs(numeric - forecast.ensemblePrediction) <= tolerance;
+      const predictedProb = clamp01(0.5);
+
+      const res = await fetch("/api/calibration", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          forecastId: forecast.forecastId,
+          predictedProbability: predictedProb,
+          actualOutcome,
+          targetColumn: forecast.targetColumn,
+          modelPredictions: forecast.modelPredictions,
+          actualValue: numeric,
+        }),
+      });
+      const body = (await res.json().catch(() => null)) as RecordOutcomeResponse | null;
+      if (!res.ok) {
+        throw new Error(
+          getApiErrorMessage(body, `Server responded with ${res.status}`),
+        );
+      }
+
+      setRecordSuccess(true);
+      setRecordedThisOpen(true);
+      setSidecarBanner({
+        status: body?.sidecarStatus ?? "skipped",
+        observationCount: body?.observationCount,
+        reason: body?.sidecarReason,
+      });
+      if (body?.sidecarStatus === "updated" && body.observationCount !== undefined) {
+        onForecastOutcomeRecorded?.(body.observationCount);
+      }
       await fetchCalibration();
     } catch (err) {
       setRecordError(err instanceof Error ? err.message : "Failed to record outcome");
@@ -372,8 +486,8 @@ export default function CalibrationModal({
 
   if (!isOpen) return null;
 
-  const hasAnalysis = analysisId !== null;
-  const hasPrediction = predictedProbability !== null;
+  const hasAnalysis = mode === "analysis" && analysisId !== null;
+  const hasPrediction = mode === "analysis" && predictedProbability !== null;
 
   return (
     <div
@@ -419,10 +533,22 @@ export default function CalibrationModal({
               className="text-xs font-medium uppercase tracking-wider mb-3"
               style={{ color: TEXT_DIM }}
             >
-              Record Outcome
+              {mode === "forecast" ? "Record Real Outcome" : "Record Outcome"}
             </h3>
 
-            {!hasAnalysis ? (
+            {mode === "forecast" && forecast ? (
+              <ForecastOutcomeForm
+                forecast={forecast}
+                actualValueStr={actualValueStr}
+                onActualValueChange={setActualValueStr}
+                isRecording={isRecording}
+                recordedThisOpen={recordedThisOpen}
+                recordError={recordError}
+                recordSuccess={recordSuccess}
+                sidecarBanner={sidecarBanner}
+                onSubmit={recordForecastOutcome}
+              />
+            ) : !hasAnalysis ? (
               <div
                 className="rounded px-4 py-3 text-sm border"
                 style={{
@@ -447,7 +573,7 @@ export default function CalibrationModal({
             ) : (
               <div className="space-y-3">
                 {/* Show predicted probability */}
-                {hasPrediction && (
+                {hasPrediction && predictedProbability !== null && (
                   <div
                     className="text-sm"
                     style={{ color: TEXT_SECONDARY }}
@@ -479,7 +605,7 @@ export default function CalibrationModal({
                 {/* Outcome buttons */}
                 <div className="flex gap-3">
                   <button
-                    onClick={() => recordOutcome(true)}
+                    onClick={() => recordAnalysisOutcome(true)}
                     disabled={isRecording || !hasPrediction || recordedThisOpen}
                     className="flex-1 rounded px-4 py-2.5 text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                     style={{
@@ -504,7 +630,7 @@ export default function CalibrationModal({
                   </button>
 
                   <button
-                    onClick={() => recordOutcome(false)}
+                    onClick={() => recordAnalysisOutcome(false)}
                     disabled={isRecording || !hasPrediction || recordedThisOpen}
                     className="flex-1 rounded px-4 py-2.5 text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                     style={{
@@ -635,4 +761,130 @@ export default function CalibrationModal({
       </div>
     </div>
   );
+}
+
+// =============================================================
+// Forecast-mode form (extracted for readability)
+// =============================================================
+
+function ForecastOutcomeForm({
+  forecast,
+  actualValueStr,
+  onActualValueChange,
+  isRecording,
+  recordedThisOpen,
+  recordError,
+  recordSuccess,
+  sidecarBanner,
+  onSubmit,
+}: {
+  forecast: ForecastCalibrationContext;
+  actualValueStr: string;
+  onActualValueChange: (next: string) => void;
+  isRecording: boolean;
+  recordedThisOpen: boolean;
+  recordError: string | null;
+  recordSuccess: boolean;
+  sidecarBanner:
+    | null
+    | { status: "updated" | "down" | "error" | "skipped"; observationCount?: number; reason?: string };
+  onSubmit: () => void;
+}) {
+  return (
+    <div className="space-y-3">
+      <div className="text-sm" style={{ color: TEXT_SECONDARY }}>
+        Target column:{" "}
+        <span className="font-mono font-semibold" style={{ color: TEXT_PRIMARY }}>
+          {forecast.targetColumn}
+        </span>
+      </div>
+      <div className="text-sm" style={{ color: TEXT_SECONDARY }}>
+        Ensemble prediction:{" "}
+        <span className="font-mono" style={{ color: TEXT_PRIMARY }}>
+          {forecast.ensemblePrediction.toFixed(2)}
+        </span>
+      </div>
+
+      <label className="block text-xs" style={{ color: TEXT_DIM }}>
+        Observed value
+        <input
+          type="text"
+          inputMode="decimal"
+          value={actualValueStr}
+          onChange={(e) => onActualValueChange(e.target.value)}
+          disabled={isRecording || recordedThisOpen}
+          className="mt-1 w-full rounded px-3 py-2 text-sm font-mono"
+          style={{
+            background: "#1e293b",
+            border: `1px solid ${BORDER}`,
+            color: TEXT_PRIMARY,
+          }}
+          placeholder="e.g. 612.5"
+        />
+      </label>
+
+      {recordError && (
+        <div
+          className="rounded px-3 py-2 text-xs border"
+          style={{
+            background: "rgba(239, 68, 68, 0.1)",
+            borderColor: ACCENT_RED,
+            color: ACCENT_RED,
+          }}
+        >
+          {recordError}
+        </div>
+      )}
+
+      {recordSuccess && sidecarBanner && (
+        <div
+          className="rounded px-3 py-2 text-xs border"
+          style={{
+            background:
+              sidecarBanner.status === "updated"
+                ? "rgba(34, 197, 94, 0.1)"
+                : "rgba(245, 158, 11, 0.1)",
+            borderColor:
+              sidecarBanner.status === "updated" ? ACCENT_GREEN : ACCENT_AMBER,
+            color: sidecarBanner.status === "updated" ? ACCENT_GREEN : ACCENT_AMBER,
+          }}
+        >
+          {sidecarBanner.status === "updated"
+            ? `Outcome saved. Sidecar updated weights based on ${sidecarBanner.observationCount} outcomes for ${forecast.targetColumn}.`
+            : sidecarBanner.status === "down"
+            ? `Outcome saved locally. Sidecar unreachable (${sidecarBanner.reason ?? "no reason"}). Weights will update on next sidecar contact.`
+            : sidecarBanner.status === "error"
+            ? `Outcome saved locally. Sidecar error (${sidecarBanner.reason ?? "no reason"}).`
+            : "Outcome saved locally."}
+        </div>
+      )}
+
+      <button
+        type="button"
+        onClick={onSubmit}
+        disabled={isRecording || recordedThisOpen}
+        className="rounded px-4 py-2.5 text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+        style={{
+          background: "rgba(59, 130, 246, 0.15)",
+          border: `1px solid ${ACCENT_BLUE}`,
+          color: ACCENT_BLUE,
+        }}
+      >
+        {isRecording ? "Saving..." : recordedThisOpen ? "Saved" : "Save outcome"}
+      </button>
+    </div>
+  );
+}
+
+function clamp01(n: number): number {
+  if (!Number.isFinite(n)) return 0.5;
+  if (n < 0) return 0;
+  if (n > 1) return 1;
+  return n;
+}
+
+function formatNumberInput(value: number): string {
+  if (!Number.isFinite(value)) return "";
+  // Trim to a reasonable number of decimals to keep the input field tidy.
+  return value.toFixed(2);
 }

@@ -5,8 +5,9 @@
  * `ace_hospital.UnifiedACEEnsemble` forecaster. This client does no
  * caching, no fallback to fake data, and no retry-on-empty heuristics
  * — if the sidecar is down, the caller should surface the error to the
- * user. R6-04 ships this client only; R6-05 (Forecast Mode UI) and
- * R6-06 (calibration loop) consume it.
+ * user. R6-04 shipped train/predict; R6-05 consumed them from the
+ * forecast route; R6-06 added recordOutcome + getPriors to close the
+ * calibration loop.
  */
 
 export interface EnsembleHealth {
@@ -53,6 +54,10 @@ export interface EnsemblePrediction {
   regime_type: string;
   rho: number;
   mode: string;
+  /** R6-06: true if SLSQP weights were re-optimised against EMA priors. */
+  priors_applied?: boolean;
+  /** R6-06: number of /outcome calls accumulated for this column. */
+  observation_count?: number;
 }
 
 export interface OutcomeRequest {
@@ -61,11 +66,22 @@ export interface OutcomeRequest {
   actual: number;
 }
 
+export interface BetaPrior {
+  type: string;
+  params: Record<string, number>;
+}
+
 export interface OutcomeResponse {
   column: string;
-  updated_priors: Record<string, { type: string; params: Record<string, number> }>;
+  updated_priors: Record<string, BetaPrior>;
   observation_count: number;
-  note: string;
+}
+
+export interface PriorsResponse {
+  column: string;
+  priors: Record<string, BetaPrior>;
+  observation_count: number;
+  ema_mape: Record<string, number>;
 }
 
 export class EnsembleClientError extends Error {
@@ -129,12 +145,35 @@ export class EnsembleClient {
     });
   }
 
-  async outcome(req: OutcomeRequest): Promise<OutcomeResponse> {
+  /**
+   * Record an observed (model_predictions, actual) pair for a column.
+   *
+   * The sidecar updates its EMA learner and returns the freshly-extracted
+   * Beta priors. The next /predict on the same column with
+   * useLatestPriors=true will re-optimise the SLSQP weights against these
+   * priors. R6-06 only persists the outcome in SQLite — the sidecar's
+   * in-process EMA is the calibration cache.
+   */
+  async recordOutcome(req: OutcomeRequest): Promise<OutcomeResponse> {
     return this.request<OutcomeResponse>("POST", "/outcome", {
       column: req.column,
       model_predictions: req.modelPredictions,
       actual: req.actual,
     });
+  }
+
+  /** Backwards-compatible alias retained for R6-04 callers. */
+  async outcome(req: OutcomeRequest): Promise<OutcomeResponse> {
+    return this.recordOutcome(req);
+  }
+
+  /**
+   * Read the current EMA-derived Beta priors and per-model EMA MAPEs for a
+   * column. Returns observation_count=0 with empty maps if the column has
+   * never had an outcome recorded.
+   */
+  async getPriors(column: string): Promise<PriorsResponse> {
+    return this.request<PriorsResponse>("GET", `/priors/${encodeURIComponent(column)}`);
   }
 
   private async request<T>(method: "GET" | "POST", path: string, body?: unknown): Promise<T> {

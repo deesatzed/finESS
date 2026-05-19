@@ -26,6 +26,7 @@ const VALID_METHODS: CombinationMethod[] = [
 const MAX_QUERY_LENGTH = 20_000;
 const MAX_JSON_BYTES = 1_000_000;
 const MAX_CSV_BYTES = 5_000_000;
+const MAX_MULTI_MODELS = 8;
 const VALID_HORIZONS: ForecastHorizon[] = [1, 2, 3];
 
 export class ValidationError extends Error {
@@ -43,16 +44,54 @@ export interface AnalysisSaveRequest {
   seed: number | null;
 }
 
+/**
+ * Calibration outcome payload (R6-06).
+ *
+ * Two shapes:
+ *
+ *  * Analysis branch — caller supplies `analysisId`. Used by Path A graphs.
+ *  * Forecast branch — caller supplies `forecastId` AND the trio
+ *    (`targetColumn`, `modelPredictions`, `actualValue`). The route handler
+ *    forwards the trio to the ensemble sidecar's `/outcome` endpoint so
+ *    the next forecast on the same column re-optimises weights against
+ *    the EMA-derived priors. Persisting `predictedProbability` /
+ *    `actualOutcome` to SQLite still works (and is required for the
+ *    calibration curve UI) by mapping "actualValue == predicted within
+ *    tolerance" -> boolean — but the actual numeric value is the
+ *    load-bearing field for the loop.
+ *
+ * The handler enforces exactly-one-id; the validator only checks shape.
+ */
 export interface CalibrationOutcomeRequest {
   analysisId?: string;
   forecastId?: string;
   predictedProbability: number;
   actualOutcome: boolean;
+  /** R6-06 forecast feedback: column the forecast targeted. */
+  targetColumn?: string;
+  /** R6-06 forecast feedback: per-base-model predictions returned by /api/forecast. */
+  modelPredictions?: Record<string, number>;
+  /** R6-06 forecast feedback: the real numeric outcome value. */
+  actualValue?: number;
 }
 
 export interface AnalyzeRequest {
   query: string;
   model: string;
+  apiKey?: string;
+}
+
+/**
+ * R6-02 — Request payload for `/api/analyze/multi`.
+ *
+ * Unlike single-model analyze, `model` is not required: an empty/omitted
+ * `models` array means "use whatever the server has configured in
+ * OPENROUTER_MODELS". When the caller does pass models, the array is the
+ * source of truth — we never silently inject extras.
+ */
+export interface MultiAnalyzeRequest {
+  query: string;
+  models?: string[];
   apiKey?: string;
 }
 
@@ -254,11 +293,66 @@ export function validateCalibrationOutcomeRequest(
     throw new ValidationError("actualOutcome must be boolean");
   }
 
+  // R6-06 — forecast-mode feedback fields. All optional, but if any one
+  // of (targetColumn, modelPredictions, actualValue) is provided, the
+  // other two are required (otherwise the sidecar cannot record the
+  // outcome). The route handler is the one that actually decides whether
+  // to forward to the sidecar, but the schema rejects half-built payloads
+  // up front so we don't end up persisting calibration rows that quietly
+  // never reach the EMA learner.
+  let targetColumn: string | undefined;
+  let modelPredictions: Record<string, number> | undefined;
+  let actualValue: number | undefined;
+
+  const hasAnyFeedbackField =
+    body.targetColumn !== undefined ||
+    body.modelPredictions !== undefined ||
+    body.actualValue !== undefined;
+
+  if (hasAnyFeedbackField) {
+    if (typeof body.targetColumn !== "string" || body.targetColumn.trim() === "") {
+      throw new ValidationError(
+        "targetColumn is required when forecast feedback fields are present"
+      );
+    }
+    targetColumn = body.targetColumn.trim();
+
+    if (!isRecord(body.modelPredictions)) {
+      throw new ValidationError(
+        "modelPredictions must be an object of {model: number} when forecast feedback is present"
+      );
+    }
+    const cleaned: Record<string, number> = {};
+    for (const [model, pred] of Object.entries(body.modelPredictions)) {
+      if (typeof model !== "string" || model.trim() === "") {
+        throw new ValidationError("modelPredictions keys must be non-empty strings");
+      }
+      if (typeof pred !== "number" || !Number.isFinite(pred)) {
+        throw new ValidationError(
+          `modelPredictions['${model}'] must be a finite number`
+        );
+      }
+      cleaned[model.trim()] = pred;
+    }
+    if (Object.keys(cleaned).length === 0) {
+      throw new ValidationError("modelPredictions must contain at least one entry");
+    }
+    modelPredictions = cleaned;
+
+    if (typeof body.actualValue !== "number" || !Number.isFinite(body.actualValue)) {
+      throw new ValidationError("actualValue must be a finite number");
+    }
+    actualValue = body.actualValue;
+  }
+
   return {
     analysisId,
     forecastId,
     predictedProbability: body.predictedProbability,
     actualOutcome: body.actualOutcome,
+    targetColumn,
+    modelPredictions,
+    actualValue,
   };
 }
 
@@ -278,6 +372,48 @@ export function validateAnalyzeRequest(value: unknown): AnalyzeRequest {
   return {
     query: body.query,
     model: body.model,
+    apiKey:
+      typeof body.apiKey === "string" && body.apiKey.trim() !== ""
+        ? body.apiKey.trim()
+        : undefined,
+  };
+}
+
+export function validateMultiAnalyzeRequest(value: unknown): MultiAnalyzeRequest {
+  const body = requireRecord(value, "Multi-analyze request");
+
+  if (typeof body.query !== "string" || body.query.trim() === "") {
+    throw new ValidationError("query is required");
+  }
+  if (body.query.length > MAX_QUERY_LENGTH) {
+    throw new ValidationError("query is too large");
+  }
+
+  let models: string[] | undefined;
+  if (body.models !== undefined && body.models !== null) {
+    if (!Array.isArray(body.models)) {
+      throw new ValidationError("models must be an array of strings");
+    }
+    const cleaned: string[] = [];
+    for (const entry of body.models) {
+      if (typeof entry !== "string") {
+        throw new ValidationError("models must contain only strings");
+      }
+      const trimmed = entry.trim();
+      if (trimmed === "") continue;
+      cleaned.push(trimmed);
+    }
+    if (cleaned.length > MAX_MULTI_MODELS) {
+      throw new ValidationError(
+        `models may not exceed ${MAX_MULTI_MODELS} entries`
+      );
+    }
+    models = cleaned.length > 0 ? cleaned : undefined;
+  }
+
+  return {
+    query: body.query,
+    models,
     apiKey:
       typeof body.apiKey === "string" && body.apiKey.trim() !== ""
         ? body.apiKey.trim()

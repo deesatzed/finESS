@@ -13,7 +13,8 @@
     "test": "jest",
     "test:e2e": "jest --runInBand __tests__/e2e",
     "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage"
+    "test:coverage": "jest --coverage",
+    "smoke:multi-proposer": "node scripts/multi-proposer-live-check.mjs"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",
