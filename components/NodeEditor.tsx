@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from "react";
 import type { UncertaintyNode, UncertaintyGraph } from "@/lib/types";
+import { getSourceStyle } from "@/lib/ui/source-style";
 
 interface NodeEditorProps {
   graph: UncertaintyGraph;
@@ -109,12 +110,26 @@ export function NodeEditor({
     );
   }
 
+  const sourceStyle = getSourceStyle(node.source);
+
   return (
     <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-50">
-      <div className="bg-[#0f1629] border border-[#1e293b] rounded-lg w-[420px] max-h-[80vh] overflow-y-auto">
+      <div
+        className={`bg-[#0f1629] border border-[#1e293b] border-l-4 ${sourceStyle.borderClass} rounded-lg w-[420px] max-h-[80vh] overflow-y-auto`}
+        data-source={node.source ?? "llm_prior"}
+      >
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-[#1e293b]">
-          <h3 className="text-sm font-medium text-white">{node.name}</h3>
+          <div className="flex items-center gap-2 min-w-0">
+            <h3 className="text-sm font-medium text-white truncate">{node.name}</h3>
+            <span
+              className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium ${sourceStyle.pillClass}`}
+              title={sourceStyle.title}
+            >
+              <span className={`inline-block w-1.5 h-1.5 rounded-full ${sourceStyle.dotClass}`} />
+              {sourceStyle.label}
+            </span>
+          </div>
           <button
             onClick={onClose}
             className="text-[#64748b] hover:text-white text-lg leading-none"

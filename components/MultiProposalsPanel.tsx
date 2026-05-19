@@ -18,6 +18,7 @@
 import { useState } from "react";
 import type { UncertaintyGraph } from "@/lib/types";
 import type { ProposalResult } from "@/lib/ai/multi-proposer";
+import { getSourceStyle } from "@/lib/ui/source-style";
 
 interface MultiProposalsPanelProps {
   proposals: ProposalResult[];
@@ -123,17 +124,29 @@ function ProposalCard({
 
           {expanded && (
             <ul className="mt-2 space-y-1 border-t border-[#1e293b] pt-2">
-              {proposal.graph.nodes.map((node) => (
-                <li
-                  key={node.id}
-                  className="leading-tight text-[10px] text-[#94a3b8]"
-                >
-                  <span className="font-mono text-white">{node.id}</span>{" "}
-                  <span className="text-[#cbd5e1]">{node.name}</span> —{" "}
-                  mean {Number(node.mean).toFixed(3)} ± {Number(node.sd).toFixed(3)}{" "}
-                  <span className="text-[#64748b]">({node.source ?? "llm_prior"})</span>
-                </li>
-              ))}
+              {proposal.graph.nodes.map((node) => {
+                const style = getSourceStyle(node.source);
+                return (
+                  <li
+                    key={node.id}
+                    data-source={node.source ?? "llm_prior"}
+                    className={`flex items-center gap-1.5 border-l-2 ${style.borderClass} pl-1.5 leading-tight text-[10px] text-[#94a3b8]`}
+                  >
+                    <span className="font-mono text-white">{node.id}</span>
+                    <span className="text-[#cbd5e1]">{node.name}</span>
+                    <span className="text-[#64748b]">
+                      mean {Number(node.mean).toFixed(3)} ± {Number(node.sd).toFixed(3)}
+                    </span>
+                    <span
+                      className={`inline-flex items-center gap-1 rounded px-1 py-px text-[9px] font-medium ${style.pillClass}`}
+                      title={style.title}
+                    >
+                      <span className={`inline-block w-1 h-1 rounded-full ${style.dotClass}`} />
+                      {style.label}
+                    </span>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </>

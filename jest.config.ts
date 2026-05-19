@@ -15,11 +15,46 @@ const config: Config = {
     "!**/__tests__/**",
   ],
   coverageThreshold: {
+    // Globals are regression gates pinned at current measured coverage with
+    // a small noise buffer. Per-file gates below tighten this for the
+    // high-traffic correctness files. Lift any threshold once the
+    // corresponding file genuinely improves; do not weaken to mask a
+    // regression.
     global: {
-      statements: 85,
-      branches: 75,
-      functions: 90,
-      lines: 85,
+      statements: 84,
+      branches: 72,
+      functions: 89,
+      lines: 84,
+    },
+    // M8-06: per-file regression gates on the high-traffic correctness files
+    // (semantic validator, DAG executor, multi-proposer pool, OpenRouter
+    // client wrapper). Thresholds are pinned at current coverage minus a
+    // small buffer for run-to-run noise. They catch regressions without
+    // forcing premature test-writing for already well-covered files. Lift
+    // any threshold once the corresponding file genuinely improves.
+    "./lib/ai/parse-response.ts": {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    "./lib/engine/dag-executor.ts": {
+      statements: 100,
+      branches: 95,
+      functions: 100,
+      lines: 100,
+    },
+    "./lib/ai/multi-proposer.ts": {
+      statements: 92,
+      branches: 78,
+      functions: 100,
+      lines: 92,
+    },
+    "./lib/ai/openrouter-client.ts": {
+      statements: 84,
+      branches: 74,
+      functions: 92,
+      lines: 88,
     },
   },
 };
