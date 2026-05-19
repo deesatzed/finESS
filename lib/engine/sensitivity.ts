@@ -1,5 +1,5 @@
 import { createPRNG } from "./prng";
-import { sampleDistribution } from "./distributions";
+import { sampleDistribution, sampleNode } from "./distributions";
 import { buildEdgeGroups, executeDAGSample } from "./dag-executor";
 import type {
   UncertaintyGraph,
@@ -89,11 +89,12 @@ function runWithOverrides(
       const override = overrides[node.id];
       if (override?.fixedValue !== undefined) {
         nodeSamples[node.id] = override.fixedValue;
-      } else {
-        const sd =
-          override?.sdMultiplier !== undefined
-            ? node.sd * override.sdMultiplier
-            : node.sd;
+      } else if (override?.sdMultiplier !== undefined) {
+        // SD perturbation path: well-defined for normal/beta/lognormal.
+        // Triangular has no SD parameter — sampleDistribution's triangular
+        // fallback uses [range[0], range[1]] with symmetric mode here,
+        // which is honest about not supporting SD perturbation for triangular.
+        const sd = node.sd * override.sdMultiplier;
         nodeSamples[node.id] = sampleDistribution(
           rand,
           node.distribution,
@@ -101,6 +102,10 @@ function runWithOverrides(
           sd,
           node.range
         );
+      } else {
+        // No perturbation: use the node-aware sampler so triangular nodes
+        // read their min/mode/max correctly.
+        nodeSamples[node.id] = sampleNode(rand, node);
       }
     }
 

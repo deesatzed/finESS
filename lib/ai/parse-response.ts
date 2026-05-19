@@ -12,7 +12,13 @@ const VALID_METHODS: CombinationMethod[] = [
   "multiplicative",
 ];
 
-const VALID_DISTRIBUTIONS = ["beta", "normal", "uniform", "lognormal"];
+const VALID_DISTRIBUTIONS = [
+  "beta",
+  "normal",
+  "uniform",
+  "lognormal",
+  "triangular",
+];
 
 /**
  * Sources that we accept verbatim from the model/persisted graph.
@@ -180,6 +186,20 @@ function validateNode(node: unknown): void {
   if (typeof n.unit !== "string") {
     throw new Error(`Node '${n.id}' must have a 'unit' string`);
   }
+
+  // Triangular: require min <= mode <= max (numeric, all present).
+  if (n.distribution === "triangular") {
+    if (typeof n.min !== "number" || typeof n.mode !== "number" || typeof n.max !== "number") {
+      throw new Error(
+        `Node '${n.id}' is triangular but is missing numeric min/mode/max`
+      );
+    }
+    if (!(n.min <= n.mode && n.mode <= n.max)) {
+      throw new Error(
+        `Node '${n.id}' triangular params invalid: require min <= mode <= max, got min=${n.min} mode=${n.mode} max=${n.max}`
+      );
+    }
+  }
 }
 
 /**
@@ -221,6 +241,13 @@ function normalizeNode(raw: Record<string, unknown>): UncertaintyNode {
   }
   if (typeof raw.sourceNote === "string") {
     normalized.sourceNote = raw.sourceNote;
+  }
+  // Triangular-specific fields. validateNode already enforced numericness
+  // and min <= mode <= max when distribution === "triangular".
+  if (raw.distribution === "triangular") {
+    normalized.min = raw.min as number;
+    normalized.mode = raw.mode as number;
+    normalized.max = raw.max as number;
   }
 
   return normalized;

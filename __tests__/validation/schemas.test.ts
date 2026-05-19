@@ -69,4 +69,53 @@ describe("runtime validation schemas", () => {
       })
     ).toThrow("predictedProbability");
   });
+
+  describe("triangular distribution (C1)", () => {
+    const validTriangularNode = {
+      id: "infl",
+      name: "Inflation",
+      description: "annual inflation rate",
+      distribution: "triangular",
+      mean: 0.03,
+      sd: 0.01,
+      range: [0, 0.1],
+      unit: "%",
+      min: 0.018,
+      mode: 0.028,
+      max: 0.055,
+    };
+    const baseGraph = {
+      nodes: [validTriangularNode],
+      edges: [{ id: "e1", source: "infl", target: "out", method: "additive" }],
+      outputNodeId: "out",
+    };
+
+    test("accepts a well-formed triangular graph and preserves min/mode/max", () => {
+      const validated = validateUncertaintyGraph(baseGraph);
+      expect(validated.nodes[0].distribution).toBe("triangular");
+      expect(validated.nodes[0].min).toBe(0.018);
+      expect(validated.nodes[0].mode).toBe(0.028);
+      expect(validated.nodes[0].max).toBe(0.055);
+    });
+
+    test("rejects triangular node missing min", () => {
+      const bad = {
+        ...baseGraph,
+        nodes: [{ ...validTriangularNode, min: undefined }],
+      };
+      expect(() => validateUncertaintyGraph(bad)).toThrow(
+        /missing numeric min\/mode\/max/
+      );
+    });
+
+    test("rejects triangular with mode outside [min, max]", () => {
+      const bad = {
+        ...baseGraph,
+        nodes: [{ ...validTriangularNode, min: 0.5, mode: 0.1, max: 0.9 }],
+      };
+      expect(() => validateUncertaintyGraph(bad)).toThrow(
+        /min <= mode <= max/
+      );
+    });
+  });
 });

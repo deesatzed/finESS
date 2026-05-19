@@ -14,6 +14,7 @@ const VALID_DISTRIBUTIONS: DistributionType[] = [
   "normal",
   "uniform",
   "lognormal",
+  "triangular",
 ];
 
 const VALID_METHODS: CombinationMethod[] = [
@@ -145,6 +146,26 @@ function validateNode(value: unknown): UncertaintyNode {
     throw new ValidationError(`Node '${node.id}' must have a unit string`);
   }
 
+  // C1: triangular requires numeric min/mode/max with min <= mode <= max.
+  // Enforced here so save/load can never round-trip a triangular node missing
+  // its parameters.
+  if (node.distribution === "triangular") {
+    if (
+      typeof node.min !== "number" ||
+      typeof node.mode !== "number" ||
+      typeof node.max !== "number"
+    ) {
+      throw new ValidationError(
+        `Node '${node.id}' is triangular but is missing numeric min/mode/max`
+      );
+    }
+    if (!(node.min <= node.mode && node.mode <= node.max)) {
+      throw new ValidationError(
+        `Node '${node.id}' triangular params invalid: require min <= mode <= max, got min=${node.min} mode=${node.mode} max=${node.max}`
+      );
+    }
+  }
+
   const validated: UncertaintyNode = {
     id: node.id,
     name: node.name,
@@ -166,6 +187,12 @@ function validateNode(value: unknown): UncertaintyNode {
   };
   if (typeof node.sourceNote === "string" && node.sourceNote.trim() !== "") {
     validated.sourceNote = node.sourceNote;
+  }
+  // C1: carry triangular params through save/load. Validated above.
+  if (node.distribution === "triangular") {
+    validated.min = node.min as number;
+    validated.mode = node.mode as number;
+    validated.max = node.max as number;
   }
   return validated;
 }

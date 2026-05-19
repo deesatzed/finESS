@@ -3,7 +3,12 @@
 // ============================================================
 
 /** Distribution types supported by the Monte Carlo engine */
-export type DistributionType = "beta" | "normal" | "uniform" | "lognormal";
+export type DistributionType =
+  | "beta"
+  | "normal"
+  | "uniform"
+  | "lognormal"
+  | "triangular";
 
 /** How edges combine their source values into a target node */
 export type CombinationMethod =
@@ -45,6 +50,15 @@ export interface UncertaintyNode {
   source?: NodeSource;
   /** Optional one-line citation or note describing the source. */
   sourceNote?: string;
+  /**
+   * Triangular distribution parameters. Used only when `distribution === "triangular"`.
+   * Must satisfy `min <= mode <= max`. When triangular is selected, `mean` and `sd`
+   * are derived from these (mean = (min+mode+max)/3) and `range` is ignored as the
+   * authoritative bounds; min/max are the source of truth.
+   */
+  min?: number;
+  mode?: number;
+  max?: number;
 }
 
 /**

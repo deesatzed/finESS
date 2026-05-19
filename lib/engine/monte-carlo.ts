@@ -1,5 +1,5 @@
 import { createPRNG } from "./prng";
-import { sampleDistribution } from "./distributions";
+import { sampleNode } from "./distributions";
 import { buildEdgeGroups, executeDAGSample } from "./dag-executor";
 import type {
   UncertaintyGraph,
@@ -18,15 +18,10 @@ function sampleLeafNodes(
   const samples: Record<string, number> = {};
 
   for (const node of graph.nodes) {
-    // Sample ALL nodes — even intermediate targets get their base distribution sampled
-    // The DAG executor will modify intermediate nodes via edges
-    samples[node.id] = sampleDistribution(
-      rand,
-      node.distribution,
-      node.mean,
-      node.sd,
-      node.range
-    );
+    // Sample ALL nodes — even intermediate targets get their base distribution sampled.
+    // The DAG executor will modify intermediate nodes via edges.
+    // sampleNode reads distribution-specific fields (min/mode/max for triangular).
+    samples[node.id] = sampleNode(rand, node);
   }
 
   return samples;

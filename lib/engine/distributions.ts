@@ -1,5 +1,25 @@
 import { normalFromUniform } from "./prng";
-import type { DistributionType } from "@/lib/types";
+import type { DistributionType, UncertaintyNode } from "@/lib/types";
+
+/**
+ * Inverse-CDF sample from a Triangular(min, mode, max) distribution.
+ * Reference: hometier-app2.html line 2491 (original design).
+ * Caller is responsible for validating min <= mode <= max.
+ */
+export function sampleTriangular(
+  rand: () => number,
+  min: number,
+  mode: number,
+  max: number
+): number {
+  if (max === min) return min;
+  const u = rand();
+  const fc = (mode - min) / (max - min);
+  if (u < fc) {
+    return min + Math.sqrt(u * (max - min) * (mode - min));
+  }
+  return max - Math.sqrt((1 - u) * (max - min) * (max - mode));
+}
 
 /**
  * Compute beta distribution alpha/beta from mean and SD.
@@ -89,9 +109,53 @@ export function sampleDistribution(
       value = Math.exp(normalFromUniform(rand, mu, Math.sqrt(sigma2)));
       break;
     }
+    case "triangular": {
+      // Triangular uses range[0]/range[1] as min/max with mode at (min+max)/2.
+      // Callers that have a non-symmetric mode should use sampleNode(rand, node)
+      // instead, which reads node.min/mode/max as the authoritative source.
+      const min = range[0];
+      const max = range[1];
+      const symmetricMode = (min + max) / 2;
+      value = sampleTriangular(rand, min, symmetricMode, max);
+      break;
+    }
     default:
       throw new Error(`Unknown distribution type: ${dist}`);
   }
 
   return Math.max(range[0], Math.min(range[1], value));
+}
+
+/**
+ * Node-aware sampler that knows how to read distribution-specific fields
+ * (min/mode/max for triangular). Engine callers should prefer this over the
+ * primitive sampleDistribution because it lets each distribution use the
+ * fields that genuinely parameterize it.
+ */
+export function sampleNode(rand: () => number, node: UncertaintyNode): number {
+  if (node.distribution === "triangular") {
+    if (
+      typeof node.min !== "number" ||
+      typeof node.mode !== "number" ||
+      typeof node.max !== "number"
+    ) {
+      throw new Error(
+        `Node '${node.id}' is triangular but is missing min/mode/max`
+      );
+    }
+    if (!(node.min <= node.mode && node.mode <= node.max)) {
+      throw new Error(
+        `Node '${node.id}' triangular params invalid: require min <= mode <= max, got min=${node.min} mode=${node.mode} max=${node.max}`
+      );
+    }
+    const v = sampleTriangular(rand, node.min, node.mode, node.max);
+    return Math.max(node.min, Math.min(node.max, v));
+  }
+  return sampleDistribution(
+    rand,
+    node.distribution,
+    node.mean,
+    node.sd,
+    node.range
+  );
 }

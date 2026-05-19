@@ -1,5 +1,11 @@
 import { createPRNG } from "@/lib/engine/prng";
-import { getBetaParams, sampleDistribution } from "@/lib/engine/distributions";
+import {
+  getBetaParams,
+  sampleDistribution,
+  sampleTriangular,
+  sampleNode,
+} from "@/lib/engine/distributions";
+import type { UncertaintyNode } from "@/lib/types";
 
 describe("getBetaParams", () => {
   test("computes correct alpha/beta for mean=0.18, sd=0.055", () => {
@@ -98,5 +104,139 @@ describe("sampleDistribution", () => {
       expect(s).toBeLessThanOrEqual(1);
     }
     expect(samples.length).toBe(n);
+  });
+});
+
+describe("sampleTriangular (C1)", () => {
+  test("mean over many samples approximates (min + mode + max) / 3", () => {
+    const r = createPRNG(42);
+    const min = 0;
+    const mode = 3;
+    const max = 10;
+    const n = 30000;
+    const samples = Array.from({ length: n }, () =>
+      sampleTriangular(r, min, mode, max)
+    );
+    const empiricalMean = samples.reduce((a, b) => a + b, 0) / n;
+    const expectedMean = (min + mode + max) / 3;
+    expect(empiricalMean).toBeCloseTo(expectedMean, 1);
+  });
+
+  test("samples are always within [min, max]", () => {
+    const r = createPRNG(123);
+    for (let i = 0; i < 10000; i++) {
+      const v = sampleTriangular(r, 1.8, 2.8, 5.5);
+      expect(v).toBeGreaterThanOrEqual(1.8);
+      expect(v).toBeLessThanOrEqual(5.5);
+    }
+  });
+
+  test("mode at min produces right-skewed distribution", () => {
+    const r = createPRNG(99);
+    const n = 20000;
+    const samples = Array.from({ length: n }, () =>
+      sampleTriangular(r, 0, 0, 10)
+    );
+    const empiricalMean = samples.reduce((a, b) => a + b, 0) / n;
+    // mean = (0 + 0 + 10) / 3 ≈ 3.33
+    expect(empiricalMean).toBeCloseTo(10 / 3, 1);
+    // Most samples should be below 5 (skewed toward min)
+    const belowFive = samples.filter((s) => s < 5).length / n;
+    expect(belowFive).toBeGreaterThan(0.6);
+  });
+
+  test("mode at max produces left-skewed distribution", () => {
+    const r = createPRNG(7);
+    const n = 20000;
+    const samples = Array.from({ length: n }, () =>
+      sampleTriangular(r, 0, 10, 10)
+    );
+    const empiricalMean = samples.reduce((a, b) => a + b, 0) / n;
+    expect(empiricalMean).toBeCloseTo(20 / 3, 1);
+    const aboveFive = samples.filter((s) => s > 5).length / n;
+    expect(aboveFive).toBeGreaterThan(0.6);
+  });
+
+  test("min == max collapses to single point", () => {
+    const r = createPRNG(1);
+    for (let i = 0; i < 100; i++) {
+      expect(sampleTriangular(r, 7, 7, 7)).toBe(7);
+    }
+  });
+});
+
+describe("sampleNode (C1) — node-aware dispatch", () => {
+  function makeNode(overrides: Partial<UncertaintyNode>): UncertaintyNode {
+    return {
+      id: "n1",
+      name: "N1",
+      description: "test",
+      distribution: "beta",
+      mean: 0.5,
+      sd: 0.1,
+      range: [0, 1],
+      unit: "%",
+      ...overrides,
+    };
+  }
+
+  test("routes triangular nodes to min/mode/max", () => {
+    const r = createPRNG(42);
+    const node = makeNode({
+      distribution: "triangular",
+      min: 1.8,
+      mode: 2.8,
+      max: 5.5,
+      range: [0, 10], // intentionally wider than triangular bounds
+    });
+    const n = 20000;
+    const samples = Array.from({ length: n }, () => sampleNode(r, node));
+    for (const s of samples) {
+      // Must respect triangular bounds, NOT the wider node.range.
+      expect(s).toBeGreaterThanOrEqual(1.8);
+      expect(s).toBeLessThanOrEqual(5.5);
+    }
+    const empiricalMean = samples.reduce((a, b) => a + b, 0) / n;
+    expect(empiricalMean).toBeCloseTo((1.8 + 2.8 + 5.5) / 3, 1);
+  });
+
+  test("throws if triangular node missing min/mode/max", () => {
+    const r = createPRNG(42);
+    const node = makeNode({ distribution: "triangular" });
+    expect(() => sampleNode(r, node)).toThrow(/missing min\/mode\/max/);
+  });
+
+  test("throws if triangular node violates min <= mode <= max", () => {
+    const r = createPRNG(42);
+    const node = makeNode({
+      distribution: "triangular",
+      min: 5,
+      mode: 3,
+      max: 10,
+    });
+    expect(() => sampleNode(r, node)).toThrow(/min <= mode <= max/);
+  });
+
+  test("delegates non-triangular distributions to sampleDistribution", () => {
+    const r = createPRNG(42);
+    const node = makeNode({ distribution: "normal", mean: 5, sd: 1, range: [0, 10] });
+    const n = 10000;
+    const samples = Array.from({ length: n }, () => sampleNode(r, node));
+    const empiricalMean = samples.reduce((a, b) => a + b, 0) / n;
+    expect(empiricalMean).toBeCloseTo(5, 0);
+  });
+});
+
+describe("sampleDistribution triangular fallback (C1)", () => {
+  test("triangular via primitive signature uses symmetric mode from range", () => {
+    const r = createPRNG(42);
+    const n = 20000;
+    // Primitive signature can't carry mode, so it uses the midpoint.
+    const samples = Array.from({ length: n }, () =>
+      sampleDistribution(r, "triangular", 0, 0, [0, 10])
+    );
+    const empiricalMean = samples.reduce((a, b) => a + b, 0) / n;
+    // Symmetric triangular(0, 5, 10) has mean = (0 + 5 + 10) / 3 ≈ 5
+    expect(empiricalMean).toBeCloseTo(5, 1);
   });
 });

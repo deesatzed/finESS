@@ -28,6 +28,7 @@ const DIST_COLORS: Record<DistributionType, string> = {
   normal: "#22c55e",
   uniform: "#a855f7",
   lognormal: "#f59e0b",
+  triangular: "#ec4899",
 };
 
 // Dimmed variant for bar backgrounds

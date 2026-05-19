@@ -163,3 +163,70 @@ describe("parseAIResponse semantic validation", () => {
     expect(() => parseAIResponse(ok)).not.toThrow();
   });
 });
+
+describe("parseAIResponse triangular distribution (C1)", () => {
+  function buildTriangular(overrides: Record<string, unknown> = {}): string {
+    return JSON.stringify({
+      nodes: [
+        {
+          id: "inflation",
+          name: "Inflation",
+          description: "annual inflation rate",
+          distribution: "triangular",
+          mean: 0.03,
+          sd: 0.01,
+          range: [0, 0.1],
+          unit: "%",
+          min: 0.018,
+          mode: 0.028,
+          max: 0.055,
+          ...overrides,
+        },
+      ],
+      edges: [{ id: "e1", source: "inflation", target: "out", method: "additive" }],
+      outputNodeId: "out",
+    });
+  }
+
+  test("accepts well-formed triangular node", () => {
+    expect(() => parseAIResponse(buildTriangular())).not.toThrow();
+  });
+
+  test("preserves min/mode/max on parsed node", () => {
+    const graph = parseAIResponse(buildTriangular());
+    expect(graph.nodes[0].distribution).toBe("triangular");
+    expect(graph.nodes[0].min).toBe(0.018);
+    expect(graph.nodes[0].mode).toBe(0.028);
+    expect(graph.nodes[0].max).toBe(0.055);
+  });
+
+  test("rejects triangular missing min", () => {
+    expect(() => parseAIResponse(buildTriangular({ min: undefined }))).toThrow(
+      /missing numeric min\/mode\/max/
+    );
+  });
+
+  test("rejects triangular missing mode", () => {
+    expect(() => parseAIResponse(buildTriangular({ mode: undefined }))).toThrow(
+      /missing numeric min\/mode\/max/
+    );
+  });
+
+  test("rejects triangular missing max", () => {
+    expect(() => parseAIResponse(buildTriangular({ max: undefined }))).toThrow(
+      /missing numeric min\/mode\/max/
+    );
+  });
+
+  test("rejects mode < min", () => {
+    expect(() =>
+      parseAIResponse(buildTriangular({ min: 5, mode: 3, max: 10 }))
+    ).toThrow(/min <= mode <= max/);
+  });
+
+  test("rejects mode > max", () => {
+    expect(() =>
+      parseAIResponse(buildTriangular({ min: 0, mode: 11, max: 10 }))
+    ).toThrow(/min <= mode <= max/);
+  });
+});
