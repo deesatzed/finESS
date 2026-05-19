@@ -71,7 +71,7 @@ export function NodeEditor({
     });
 
     onGraphUpdate({ ...graph, nodes: updatedNodes });
-  }, [graph, node, mean, sd, onGraphUpdate]);
+  }, [graph, node, mean, sd, impact, onGraphUpdate]);
 
   const addEstimate = useCallback(() => {
     setEstimates((prev) => [...prev, { value: "", id: nextId }]);

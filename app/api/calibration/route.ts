@@ -9,10 +9,16 @@ import {
   EnsembleClientError,
 } from "@/lib/services/ensemble-client";
 import { getCalibrationTestOptions } from "@/lib/calibration/test-hooks";
-import { computeReliability } from "@/lib/calibration/reliability";
+import {
+  MIN_OUTCOMES_FOR_RELIABILITY,
+  computeReliability,
+} from "@/lib/calibration/reliability";
 import { computeBrierScore } from "@/lib/calibration/brier";
 
-const MIN_OUTCOMES_FOR_CURVE = 20;
+// Single source of truth for the calibration-readiness threshold lives in
+// lib/calibration/reliability.ts; re-export under the legacy name for the
+// existing CalibrationModal copy that reads MIN_OUTCOMES_FOR_CURVE.
+const MIN_OUTCOMES_FOR_CURVE = MIN_OUTCOMES_FOR_RELIABILITY;
 
 // GET /api/calibration — get calibration data
 export async function GET(request: NextRequest) {
