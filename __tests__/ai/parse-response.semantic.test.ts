@@ -230,3 +230,60 @@ describe("parseAIResponse triangular distribution (C1)", () => {
     ).toThrow(/min <= mode <= max/);
   });
 });
+
+describe("parseAIResponse Bernoulli mixture gate (C2)", () => {
+  function buildGated(gate: unknown): string {
+    return JSON.stringify({
+      nodes: [
+        {
+          id: "repair",
+          name: "Repair",
+          description: "rare hit",
+          distribution: "lognormal",
+          mean: 1000,
+          sd: 500,
+          range: [0, 100000],
+          unit: "$",
+          gate,
+        },
+      ],
+      edges: [{ id: "e1", source: "repair", target: "out", method: "additive" }],
+      outputNodeId: "out",
+    });
+  }
+
+  test("accepts a well-formed gate and preserves it", () => {
+    const graph = parseAIResponse(buildGated({ probability: 0.12 }));
+    expect(graph.nodes[0].gate).toEqual({ probability: 0.12 });
+  });
+
+  test("preserves inactiveValue when present", () => {
+    const graph = parseAIResponse(buildGated({ probability: 0.5, inactiveValue: -1 }));
+    expect(graph.nodes[0].gate).toEqual({ probability: 0.5, inactiveValue: -1 });
+  });
+
+  test("rejects probability outside [0, 1]", () => {
+    expect(() => parseAIResponse(buildGated({ probability: -0.1 }))).toThrow(
+      /must be in \[0, 1\]/
+    );
+    expect(() => parseAIResponse(buildGated({ probability: 1.5 }))).toThrow(
+      /must be in \[0, 1\]/
+    );
+  });
+
+  test("rejects non-numeric probability", () => {
+    expect(() => parseAIResponse(buildGated({ probability: "high" }))).toThrow(
+      /gate\.probability must be a finite number/
+    );
+  });
+
+  test("rejects non-object gate", () => {
+    expect(() => parseAIResponse(buildGated("on"))).toThrow(/invalid 'gate'/);
+  });
+
+  test("rejects non-numeric inactiveValue", () => {
+    expect(() =>
+      parseAIResponse(buildGated({ probability: 0.5, inactiveValue: "zero" }))
+    ).toThrow(/inactiveValue must be a finite number/);
+  });
+});

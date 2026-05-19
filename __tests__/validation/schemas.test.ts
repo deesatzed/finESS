@@ -118,4 +118,44 @@ describe("runtime validation schemas", () => {
       );
     });
   });
+
+  describe("Bernoulli mixture gate (C2)", () => {
+    const baseNode = {
+      id: "repair",
+      name: "Repair",
+      description: "rare hit",
+      distribution: "lognormal",
+      mean: 1000,
+      sd: 500,
+      range: [0, 100000],
+      unit: "$",
+    };
+    const baseGraph = (gate: unknown) => ({
+      nodes: [{ ...baseNode, gate }],
+      edges: [{ id: "e1", source: "repair", target: "out", method: "additive" }],
+      outputNodeId: "out",
+    });
+
+    test("accepts a well-formed gate and preserves it through save/load", () => {
+      const validated = validateUncertaintyGraph(baseGraph({ probability: 0.12 }));
+      expect(validated.nodes[0].gate).toEqual({ probability: 0.12 });
+    });
+
+    test("preserves inactiveValue through save/load", () => {
+      const validated = validateUncertaintyGraph(
+        baseGraph({ probability: 0.4, inactiveValue: -50 })
+      );
+      expect(validated.nodes[0].gate).toEqual({ probability: 0.4, inactiveValue: -50 });
+    });
+
+    test("rejects probability outside [0, 1]", () => {
+      expect(() => validateUncertaintyGraph(baseGraph({ probability: 2 }))).toThrow(
+        /must be in \[0, 1\]/
+      );
+    });
+
+    test("rejects non-object gate", () => {
+      expect(() => validateUncertaintyGraph(baseGraph(0.5))).toThrow(/invalid gate/);
+    });
+  });
 });

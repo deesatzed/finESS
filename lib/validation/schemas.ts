@@ -166,6 +166,35 @@ function validateNode(value: unknown): UncertaintyNode {
     }
   }
 
+  // C2: Bernoulli mixture gate. probability must be a finite number in [0, 1].
+  // inactiveValue is optional; if present must be a finite number.
+  if (node.gate !== undefined) {
+    if (typeof node.gate !== "object" || node.gate === null || Array.isArray(node.gate)) {
+      throw new ValidationError(
+        `Node '${node.id}' has invalid gate (must be an object with a probability field)`
+      );
+    }
+    const gate = node.gate as Record<string, unknown>;
+    if (typeof gate.probability !== "number" || !Number.isFinite(gate.probability)) {
+      throw new ValidationError(
+        `Node '${node.id}' gate.probability must be a finite number`
+      );
+    }
+    if (gate.probability < 0 || gate.probability > 1) {
+      throw new ValidationError(
+        `Node '${node.id}' gate.probability must be in [0, 1], got ${gate.probability}`
+      );
+    }
+    if (
+      gate.inactiveValue !== undefined &&
+      (typeof gate.inactiveValue !== "number" || !Number.isFinite(gate.inactiveValue))
+    ) {
+      throw new ValidationError(
+        `Node '${node.id}' gate.inactiveValue must be a finite number if provided`
+      );
+    }
+  }
+
   const validated: UncertaintyNode = {
     id: node.id,
     name: node.name,
@@ -193,6 +222,14 @@ function validateNode(value: unknown): UncertaintyNode {
     validated.min = node.min as number;
     validated.mode = node.mode as number;
     validated.max = node.max as number;
+  }
+  // C2: carry Bernoulli mixture gate through save/load. Validated above.
+  if (node.gate !== undefined) {
+    const gate = node.gate as Record<string, unknown>;
+    validated.gate = { probability: gate.probability as number };
+    if (typeof gate.inactiveValue === "number") {
+      validated.gate.inactiveValue = gate.inactiveValue;
+    }
   }
   return validated;
 }

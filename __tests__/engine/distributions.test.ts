@@ -240,3 +240,112 @@ describe("sampleDistribution triangular fallback (C1)", () => {
     expect(empiricalMean).toBeCloseTo(5, 1);
   });
 });
+
+describe("sampleNode Bernoulli gate (C2)", () => {
+  function makeGatedNode(
+    probability: number,
+    inactiveValue?: number
+  ): UncertaintyNode {
+    return {
+      id: "home_repair",
+      name: "Home Repair Surprise",
+      description: "lognormal hit firing rarely",
+      distribution: "lognormal",
+      mean: 14500,
+      sd: 9800,
+      range: [0, 100000],
+      unit: "$",
+      gate: inactiveValue === undefined ? { probability } : { probability, inactiveValue },
+    };
+  }
+
+  test("probability=1 always fires (returns sampled distribution value)", () => {
+    const r = createPRNG(42);
+    const node = makeGatedNode(1);
+    for (let i = 0; i < 500; i++) {
+      const v = sampleNode(r, node);
+      // Lognormal samples are positive; gate firing means we got the
+      // distribution, not the inactiveValue (0).
+      expect(v).toBeGreaterThan(0);
+    }
+  });
+
+  test("probability=0 never fires (always returns inactiveValue=0)", () => {
+    const r = createPRNG(42);
+    const node = makeGatedNode(0);
+    for (let i = 0; i < 500; i++) {
+      expect(sampleNode(r, node)).toBe(0);
+    }
+  });
+
+  test("observed fire rate over 20k samples approximates probability", () => {
+    const r = createPRNG(123);
+    const node = makeGatedNode(0.12);
+    const n = 20000;
+    let fired = 0;
+    for (let i = 0; i < n; i++) {
+      const v = sampleNode(r, node);
+      if (v !== 0) fired++;
+    }
+    const observed = fired / n;
+    expect(observed).toBeCloseTo(0.12, 2);
+  });
+
+  test("composes with triangular distribution", () => {
+    const r = createPRNG(99);
+    const node: UncertaintyNode = {
+      id: "ssi_change",
+      name: "SSI policy shift",
+      description: "triangular hit when policy changes",
+      distribution: "triangular",
+      mean: 0,
+      sd: 1,
+      range: [-15, 8],
+      unit: "%",
+      min: -15,
+      mode: 0,
+      max: 8,
+      gate: { probability: 0.25 },
+    };
+    const n = 20000;
+    let fired = 0;
+    const firedValues: number[] = [];
+    for (let i = 0; i < n; i++) {
+      const v = sampleNode(r, node);
+      if (v !== 0) {
+        fired++;
+        firedValues.push(v);
+        expect(v).toBeGreaterThanOrEqual(-15);
+        expect(v).toBeLessThanOrEqual(8);
+      }
+    }
+    expect(fired / n).toBeCloseTo(0.25, 1);
+    // Note: triangular mean over fired-only samples = (min+mode+max)/3 ≈ -2.33.
+    // We don't tightly assert here because gate randomness is noisy on small
+    // sub-samples; the bound check above is the load-bearing assertion.
+  });
+
+  test("custom inactiveValue is returned on non-firing iterations", () => {
+    const r = createPRNG(7);
+    const node = makeGatedNode(0.5, -99);
+    const n = 10000;
+    const values = Array.from({ length: n }, () => sampleNode(r, node));
+    const inactiveCount = values.filter((v) => v === -99).length;
+    const firedCount = values.filter((v) => v !== -99).length;
+    expect(inactiveCount + firedCount).toBe(n);
+    expect(inactiveCount / n).toBeCloseTo(0.5, 1);
+    // All fired values are positive lognormal samples.
+    const firedValues = values.filter((v) => v !== -99);
+    for (const v of firedValues) {
+      expect(v).toBeGreaterThan(0);
+    }
+  });
+
+  test("throws on probability outside [0, 1]", () => {
+    const r = createPRNG(42);
+    expect(() => sampleNode(r, makeGatedNode(-0.1))).toThrow(
+      /gate\.probability/
+    );
+    expect(() => sampleNode(r, makeGatedNode(1.5))).toThrow(/gate\.probability/);
+  });
+});

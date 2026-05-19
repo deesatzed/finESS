@@ -200,6 +200,32 @@ function validateNode(node: unknown): void {
       );
     }
   }
+
+  // Bernoulli mixture gate (C2): if present, probability must be a number in [0, 1].
+  if (n.gate !== undefined) {
+    if (typeof n.gate !== "object" || n.gate === null) {
+      throw new Error(`Node '${n.id}' has invalid 'gate' (must be an object)`);
+    }
+    const gate = n.gate as Record<string, unknown>;
+    if (typeof gate.probability !== "number" || !Number.isFinite(gate.probability)) {
+      throw new Error(
+        `Node '${n.id}' gate.probability must be a finite number`
+      );
+    }
+    if (gate.probability < 0 || gate.probability > 1) {
+      throw new Error(
+        `Node '${n.id}' gate.probability must be in [0, 1], got ${gate.probability}`
+      );
+    }
+    if (
+      gate.inactiveValue !== undefined &&
+      (typeof gate.inactiveValue !== "number" || !Number.isFinite(gate.inactiveValue))
+    ) {
+      throw new Error(
+        `Node '${n.id}' gate.inactiveValue must be a finite number if provided`
+      );
+    }
+  }
 }
 
 /**
@@ -248,6 +274,17 @@ function normalizeNode(raw: Record<string, unknown>): UncertaintyNode {
     normalized.min = raw.min as number;
     normalized.mode = raw.mode as number;
     normalized.max = raw.max as number;
+  }
+  // C2: Bernoulli mixture gate. validateNode already enforced shape.
+  if (raw.gate !== undefined) {
+    const rawGate = raw.gate as Record<string, unknown>;
+    const gate: UncertaintyNode["gate"] = {
+      probability: rawGate.probability as number,
+    };
+    if (typeof rawGate.inactiveValue === "number") {
+      gate.inactiveValue = rawGate.inactiveValue;
+    }
+    normalized.gate = gate;
   }
 
   return normalized;

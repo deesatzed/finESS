@@ -127,12 +127,9 @@ export function sampleDistribution(
 }
 
 /**
- * Node-aware sampler that knows how to read distribution-specific fields
- * (min/mode/max for triangular). Engine callers should prefer this over the
- * primitive sampleDistribution because it lets each distribution use the
- * fields that genuinely parameterize it.
+ * Sample the node's distribution without applying any gate.
  */
-export function sampleNode(rand: () => number, node: UncertaintyNode): number {
+function sampleNodeRaw(rand: () => number, node: UncertaintyNode): number {
   if (node.distribution === "triangular") {
     if (
       typeof node.min !== "number" ||
@@ -158,4 +155,40 @@ export function sampleNode(rand: () => number, node: UncertaintyNode): number {
     node.sd,
     node.range
   );
+}
+
+/**
+ * Node-aware sampler that knows how to read distribution-specific fields
+ * (min/mode/max for triangular) and applies an optional Bernoulli mixture
+ * gate (C2). Engine callers should prefer this over the primitive
+ * sampleDistribution because it lets each distribution use the fields that
+ * genuinely parameterize it.
+ *
+ * When `node.gate` is set, the node fires with probability `gate.probability`
+ * (sampled normally) and otherwise returns `gate.inactiveValue` (default 0).
+ * The gate is checked BEFORE consuming a sample from the underlying
+ * distribution, so PRNG consumption is intentionally not held constant
+ * across firing/non-firing iterations — gated nodes are stochastic in both
+ * dimensions (whether they fire, and what value they take if they fire).
+ */
+export function sampleNode(rand: () => number, node: UncertaintyNode): number {
+  if (node.gate !== undefined) {
+    const p = node.gate.probability;
+    if (typeof p !== "number" || p < 0 || p > 1) {
+      throw new Error(
+        `Node '${node.id}' has invalid gate.probability '${p}' (must be in [0, 1])`
+      );
+    }
+    if (p === 0) {
+      return node.gate.inactiveValue ?? 0;
+    }
+    if (p === 1) {
+      return sampleNodeRaw(rand, node);
+    }
+    if (rand() < p) {
+      return sampleNodeRaw(rand, node);
+    }
+    return node.gate.inactiveValue ?? 0;
+  }
+  return sampleNodeRaw(rand, node);
 }

@@ -59,6 +59,18 @@ export interface UncertaintyNode {
   min?: number;
   mode?: number;
   max?: number;
+  /**
+   * Bernoulli mixture gate (C2). When set, this node fires on each Monte Carlo
+   * iteration with `probability` p; on the (1-p) fraction it contributes
+   * `inactiveValue` (default 0) instead of a sampled value. Composes with any
+   * `distribution` — e.g. "major home repair surprise" is Lognormal(14500, 9800)
+   * gated at p=0.12. The original hometier-app2.html used this pattern for
+   * episodic events.
+   */
+  gate?: {
+    probability: number;
+    inactiveValue?: number;
+  };
 }
 
 /**
