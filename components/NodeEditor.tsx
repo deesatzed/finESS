@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import type { UncertaintyNode, UncertaintyGraph } from "@/lib/types";
-import { getSourceStyle } from "@/lib/ui/source-style";
+import type { UncertaintyNode, UncertaintyGraph, NodeImpact } from "@/lib/types";
+import { VALID_IMPACTS } from "@/lib/types";
+import { getSourceStyle, getImpactStyle } from "@/lib/ui/source-style";
 
 interface NodeEditorProps {
   graph: UncertaintyGraph;
@@ -28,6 +29,8 @@ export function NodeEditor({
   // Slider state
   const [mean, setMean] = useState(node?.mean ?? 0.5);
   const [sd, setSd] = useState(node?.sd ?? 0.1);
+  // C4: operator-assigned impact tag. "" represents "no impact set".
+  const [impact, setImpact] = useState<NodeImpact | "">(node?.impact ?? "");
 
   // Expert panel state
   const [estimates, setEstimates] = useState<ExpertEstimate[]>([
@@ -55,6 +58,14 @@ export function NodeEditor({
       };
       if (n.sourceNote !== undefined) {
         next.sourceNote = n.sourceNote;
+      }
+      // C4: persist impact change. Empty string clears the field; otherwise
+      // store the selected NodeImpact. Impact does NOT flip source to
+      // user_override because changing a tag is metadata, not a value edit.
+      if (impact === "") {
+        delete (next as Partial<UncertaintyNode>).impact;
+      } else {
+        next.impact = impact;
       }
       return next;
     });
@@ -111,12 +122,14 @@ export function NodeEditor({
   }
 
   const sourceStyle = getSourceStyle(node.source);
+  const impactStyle = getImpactStyle(node.impact);
 
   return (
     <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-50">
       <div
         className={`bg-[#0f1629] border border-[#1e293b] border-l-4 ${sourceStyle.borderClass} rounded-lg w-[420px] max-h-[80vh] overflow-y-auto`}
         data-source={node.source ?? "llm_prior"}
+        data-impact={node.impact ?? "unset"}
       >
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-[#1e293b]">
@@ -129,6 +142,15 @@ export function NodeEditor({
               <span className={`inline-block w-1.5 h-1.5 rounded-full ${sourceStyle.dotClass}`} />
               {sourceStyle.label}
             </span>
+            {impactStyle && (
+              <span
+                className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium ${impactStyle.pillClass}`}
+                title={impactStyle.title}
+              >
+                <span className={`inline-block w-1.5 h-1.5 rounded-full ${impactStyle.dotClass}`} />
+                {impactStyle.label}
+              </span>
+            )}
           </div>
           <button
             onClick={onClose}
@@ -184,6 +206,30 @@ export function NodeEditor({
               onCompute={computeFromEstimates}
             />
           )}
+        </div>
+
+        {/* C4: operator-assigned impact tag */}
+        <div className="px-4 py-3 border-t border-[#1e293b] flex items-center gap-2">
+          <label
+            htmlFor="impact-select"
+            className="text-xs text-[#94a3b8]"
+            title="How important is this factor to the result? Used to flag mismatches against engine-computed sensitivity."
+          >
+            Impact:
+          </label>
+          <select
+            id="impact-select"
+            value={impact}
+            onChange={(e) => setImpact(e.target.value as NodeImpact | "")}
+            className="text-xs bg-[#1e293b] text-white border border-[#334155] rounded px-2 py-1 hover:border-[#475569]"
+          >
+            <option value="">— not set —</option>
+            {VALID_IMPACTS.map((value) => (
+              <option key={value} value={value}>
+                {value}
+              </option>
+            ))}
+          </select>
         </div>
 
         {/* Actions */}

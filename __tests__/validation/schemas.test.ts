@@ -158,4 +158,38 @@ describe("runtime validation schemas", () => {
       expect(() => validateUncertaintyGraph(baseGraph(0.5))).toThrow(/invalid gate/);
     });
   });
+
+  describe("impact tag (C4)", () => {
+    const baseNode = {
+      id: "n1",
+      name: "N1",
+      description: "test",
+      distribution: "normal",
+      mean: 1,
+      sd: 0.1,
+      range: [0, 10],
+      unit: "%",
+    };
+
+    test("preserves valid impact through save/load", () => {
+      for (const impact of ["low", "medium", "high", "critical"] as const) {
+        const validated = validateUncertaintyGraph({
+          nodes: [{ ...baseNode, impact }],
+          edges: [{ id: "e1", source: "n1", target: "out", method: "additive" }],
+          outputNodeId: "out",
+        });
+        expect(validated.nodes[0].impact).toBe(impact);
+      }
+    });
+
+    test("rejects invalid impact at save time", () => {
+      expect(() =>
+        validateUncertaintyGraph({
+          nodes: [{ ...baseNode, impact: "blocker" }],
+          edges: [{ id: "e1", source: "n1", target: "out", method: "additive" }],
+          outputNodeId: "out",
+        })
+      ).toThrow(/invalid impact/);
+    });
+  });
 });

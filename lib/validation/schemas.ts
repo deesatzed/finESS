@@ -166,6 +166,21 @@ function validateNode(value: unknown): UncertaintyNode {
     }
   }
 
+  // C4: impact tag. Enforce enum membership so save/load can't carry a
+  // bogus value the UI then has to defend against.
+  if (node.impact !== undefined) {
+    if (
+      node.impact !== "low" &&
+      node.impact !== "medium" &&
+      node.impact !== "high" &&
+      node.impact !== "critical"
+    ) {
+      throw new ValidationError(
+        `Node '${node.id}' has invalid impact '${node.impact}'. Must be one of: low, medium, high, critical`
+      );
+    }
+  }
+
   // C2: Bernoulli mixture gate. probability must be a finite number in [0, 1].
   // inactiveValue is optional; if present must be a finite number.
   if (node.gate !== undefined) {
@@ -230,6 +245,10 @@ function validateNode(value: unknown): UncertaintyNode {
     if (typeof gate.inactiveValue === "number") {
       validated.gate.inactiveValue = gate.inactiveValue;
     }
+  }
+  // C4: carry impact tag through save/load. Validated above.
+  if (node.impact !== undefined) {
+    validated.impact = node.impact as UncertaintyNode["impact"];
   }
   return validated;
 }

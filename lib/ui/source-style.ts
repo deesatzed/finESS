@@ -12,7 +12,7 @@
  * for evidenced). Sky-blue is reserved for explicit user edits.
  */
 
-import type { NodeSource } from "@/lib/types";
+import type { NodeImpact, NodeSource } from "@/lib/types";
 
 export interface SourceStyle {
   /** Short human-readable label for tooltips and pills. */
@@ -62,4 +62,58 @@ const STYLES: Record<NodeSource, SourceStyle> = {
 export function getSourceStyle(source: NodeSource | undefined): SourceStyle {
   if (source === undefined) return STYLES.llm_prior;
   return STYLES[source];
+}
+
+/**
+ * Visual style for operator-assigned NodeImpact (C4).
+ *
+ * Separate dimension from provenance: a node can simultaneously be
+ * `user_override` source AND `critical` impact. The UI shows two pills
+ * side by side. Colours intentionally do NOT overlap with the
+ * provenance palette (which uses emerald / amber / sky) so the two
+ * dimensions stay visually distinguishable. Impact uses neutral grey
+ * for low, blue for medium, orange for high, red for critical — a
+ * conventional severity ramp.
+ */
+export interface ImpactStyle {
+  label: string;
+  title: string;
+  pillClass: string;
+  dotClass: string;
+}
+
+const IMPACT_STYLES: Record<NodeImpact, ImpactStyle> = {
+  low: {
+    label: "low impact",
+    title:
+      "Operator-assigned: this factor is unlikely to materially move the result.",
+    pillClass: "bg-slate-500/15 text-slate-300",
+    dotClass: "bg-slate-400",
+  },
+  medium: {
+    label: "medium impact",
+    title:
+      "Operator-assigned: this factor has moderate leverage on the result.",
+    pillClass: "bg-blue-500/15 text-blue-300",
+    dotClass: "bg-blue-400",
+  },
+  high: {
+    label: "high impact",
+    title:
+      "Operator-assigned: this factor likely drives the result; verify carefully.",
+    pillClass: "bg-orange-500/15 text-orange-300",
+    dotClass: "bg-orange-400",
+  },
+  critical: {
+    label: "critical",
+    title:
+      "Operator-assigned: getting this wrong invalidates the analysis. Top priority for verification.",
+    pillClass: "bg-red-500/15 text-red-300",
+    dotClass: "bg-red-400",
+  },
+};
+
+export function getImpactStyle(impact: NodeImpact | undefined): ImpactStyle | null {
+  if (impact === undefined) return null;
+  return IMPACT_STYLES[impact];
 }

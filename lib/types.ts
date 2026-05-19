@@ -71,7 +71,20 @@ export interface UncertaintyNode {
     probability: number;
     inactiveValue?: number;
   };
+  /**
+   * Operator-assigned impact tag (C4). First-class metadata in the original
+   * hometier design ("impact: 'critical'" on disability cost when applicable).
+   * Used by the UI to surface high-impact nodes prominently, and cross-
+   * referenced by sensitivity analysis to flag discrepancies between operator
+   * judgment ("I flagged this critical") and engine output ("but variance
+   * attribution says it only drives N% of the output spread").
+   */
+  impact?: "low" | "medium" | "high" | "critical";
 }
+
+/** Allowed values for UncertaintyNode.impact (C4). */
+export const VALID_IMPACTS = ["low", "medium", "high", "critical"] as const;
+export type NodeImpact = (typeof VALID_IMPACTS)[number];
 
 /**
  * A directed edge in the uncertainty graph.

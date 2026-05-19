@@ -201,6 +201,15 @@ function validateNode(node: unknown): void {
     }
   }
 
+  // Impact (C4): if present, must be one of "low" | "medium" | "high" | "critical".
+  if (n.impact !== undefined) {
+    if (n.impact !== "low" && n.impact !== "medium" && n.impact !== "high" && n.impact !== "critical") {
+      throw new Error(
+        `Node '${n.id}' has invalid impact '${n.impact}'. Must be one of: low, medium, high, critical`
+      );
+    }
+  }
+
   // Bernoulli mixture gate (C2): if present, probability must be a number in [0, 1].
   if (n.gate !== undefined) {
     if (typeof n.gate !== "object" || n.gate === null) {
@@ -285,6 +294,10 @@ function normalizeNode(raw: Record<string, unknown>): UncertaintyNode {
       gate.inactiveValue = rawGate.inactiveValue;
     }
     normalized.gate = gate;
+  }
+  // C4: impact tag. validateNode already enforced enum membership.
+  if (raw.impact !== undefined) {
+    normalized.impact = raw.impact as UncertaintyNode["impact"];
   }
 
   return normalized;

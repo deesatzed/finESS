@@ -287,3 +287,37 @@ describe("parseAIResponse Bernoulli mixture gate (C2)", () => {
     ).toThrow(/inactiveValue must be a finite number/);
   });
 });
+
+describe("parseAIResponse impact tag (C4)", () => {
+  function buildImpact(impact: unknown): string {
+    return JSON.stringify({
+      nodes: [
+        {
+          id: "n1",
+          name: "N1",
+          description: "test",
+          distribution: "normal",
+          mean: 1,
+          sd: 0.1,
+          range: [0, 10],
+          unit: "%",
+          impact,
+        },
+      ],
+      edges: [{ id: "e1", source: "n1", target: "out", method: "additive" }],
+      outputNodeId: "out",
+    });
+  }
+
+  test("accepts and preserves all valid impact values", () => {
+    for (const value of ["low", "medium", "high", "critical"]) {
+      const graph = parseAIResponse(buildImpact(value));
+      expect(graph.nodes[0].impact).toBe(value);
+    }
+  });
+
+  test("rejects invalid impact strings", () => {
+    expect(() => parseAIResponse(buildImpact("blocker"))).toThrow(/invalid impact/);
+    expect(() => parseAIResponse(buildImpact("Critical"))).toThrow(/invalid impact/);
+  });
+});
