@@ -12,7 +12,8 @@ export type AuditEventType =
   | "calibration.access_denied"
   | "real_data.assist"
   | "real_data.assist_denied"
-  | "ai_provider_call";
+  | "ai_provider_call"
+  | "forecast_request";
 
 interface AuditEventInput {
   type: AuditEventType;
@@ -53,6 +54,7 @@ export const FORBIDDEN_AUDIT_METADATA_KEYS = new Set([
   "rawRows",
   "csvRows",
   "rows",
+  "csv",
   "query",
   "prompt",
   "freeText",

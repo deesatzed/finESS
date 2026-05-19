@@ -27,22 +27,41 @@ model Analysis {
   @@index([workspaceId, createdAt])
 }
 
+/// CalibrationOutcome attaches an observed outcome to EITHER an Analysis
+/// (Path A / Path B saved analysis) OR a Forecast (Path B Forecast Mode,
+/// R6-05).
+///
+/// `analysisId` is now nullable so Forecast-Mode results — which are NOT
+/// persisted as Analysis rows because they are produced by the Python
+/// ensemble sidecar and have a completely different shape — can carry
+/// calibration outcomes too.
+///
+/// `forecastId` is a client-generated opaque string returned by
+/// POST /api/forecast. There is intentionally NO `Forecast` model: until
+/// forecasts are durably saved we treat the id as a free-form correlation
+/// key only.
+///
+/// The API handler enforces "exactly one of analysisId / forecastId" via
+/// `validateCalibrationOutcomeRequest`. R6-06 will wire forecastId-keyed
+/// outcomes back into the ensemble sidecar's /outcome endpoint.
 model CalibrationOutcome {
   id                   String   @id @default(cuid())
   userId               String?
   workspaceId          String?
-  analysisId           String
+  analysisId           String?
+  forecastId           String?
   predictedProbability Float
   actualOutcome        Boolean
   recordedAt           DateTime @default(now())
 
   user      User?      @relation(fields: [userId], references: [id])
   workspace Workspace? @relation(fields: [workspaceId], references: [id])
-  analysis  Analysis   @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+  analysis  Analysis?  @relation(fields: [analysisId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([workspaceId, recordedAt])
   @@index([analysisId, workspaceId])
+  @@index([forecastId, workspaceId])
 }
 
 model User {

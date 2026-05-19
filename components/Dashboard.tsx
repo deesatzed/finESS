@@ -36,9 +36,18 @@ interface DashboardProps {
    * - "simulation": Path A (LLM-generated graph + Monte Carlo). Renders the
    *   PathADraftBanner so the user knows the numbers are a draft prior.
    * - "observed":  Path B (real CSV-derived empirical result). No banner.
+   * - "forecast":  Path B+ Forecast Mode (R6-05). Renders `forecastPanel`
+   *   in place of the standard six-panel grid because the ensemble output
+   *   is structurally different (per-model weights, per-model predictions,
+   *   regime label) from the Monte Carlo distribution view.
    * - undefined:   No graph yet (initial / Real Data Mode entry view). No banner.
    */
-  analysisMode?: "simulation" | "observed";
+  analysisMode?: "simulation" | "observed" | "forecast";
+  /**
+   * Rendered in place of the six-panel grid when analysisMode === "forecast".
+   * Provided by the parent so this component stays purely presentational.
+   */
+  forecastPanel?: ReactNode;
 }
 
 export function Dashboard({
@@ -49,8 +58,17 @@ export function Dashboard({
   spectrumBars,
   narrationStream,
   analysisMode,
+  forecastPanel,
 }: DashboardProps) {
   const showPathADraftBanner = analysisMode === "simulation";
+
+  if (analysisMode === "forecast" && forecastPanel) {
+    return (
+      <div className="flex-1 min-h-0 overflow-y-auto p-2 flex flex-col gap-2">
+        {forecastPanel}
+      </div>
+    );
+  }
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto p-2 flex flex-col gap-2">

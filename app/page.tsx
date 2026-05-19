@@ -10,6 +10,7 @@ import { NodeEditor } from "@/components/NodeEditor";
 import { SaveLoadModal } from "@/components/SaveLoadModal";
 import CalibrationModal from "@/components/CalibrationModal";
 import { RealDataPanel } from "@/components/RealDataPanel";
+import { ForecastPanel } from "@/components/ForecastPanel";
 import NodeNetwork from "@/components/panels/NodeNetwork";
 import LiveDistribution from "@/components/panels/LiveDistribution";
 import SensitivityRadar from "@/components/panels/SensitivityRadar";
@@ -21,6 +22,8 @@ import { getAnalysisStatus } from "@/lib/ui/analysis-status";
 import type { ObservedAnalysisResult } from "@/lib/real-data/analyze";
 import type { RealDataInsight } from "@/lib/real-data/assist";
 import type { UncertaintyGraph, SimulationResult, SensitivityResult } from "@/lib/types";
+
+type DashboardMode = "simulation" | "observed" | "forecast";
 
 function getApiErrorMessage(data: unknown, fallback: string) {
   if (
@@ -46,6 +49,7 @@ export default function Home() {
   const [model, setModel] = useState("");
   const [sessionApiKey, setSessionApiKey] = useState("");
   const [hasUsableAiKey, setHasUsableAiKey] = useState(false);
+  const [mode, setMode] = useState<DashboardMode>("observed");
   const [graph, setGraph] = useState<UncertaintyGraph | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -112,11 +116,19 @@ export default function Home() {
       ? observedResult.samples
       : sim.phase === "complete" && sim.result
         ? sim.result.samples
-      : allSamples;
+        : allSamples;
 
   const activePhase = observedResult ? "complete" : sim.phase;
   const activeResult = observedResult ?? sim.result;
   const activeSensitivity = observedSensitivity ?? sim.sensitivity;
+
+  // analysisMode passed to Dashboard:
+  // - "forecast" takes precedence so the ForecastPanel renders in place of
+  //   the six-panel grid.
+  // - Otherwise we defer to the active graph's analysisMode (set by Path A
+  //   or Path B flows).
+  const dashboardAnalysisMode: DashboardMode | undefined =
+    mode === "forecast" ? "forecast" : graph?.analysisMode;
 
   const analysisStatus = useMemo(
     () =>
@@ -307,6 +319,39 @@ export default function Home() {
         )}
       </header>
 
+      {/* Mode toggle: simulation | observed | forecast */}
+      <div
+        role="tablist"
+        aria-label="Analysis mode"
+        className="flex items-center gap-1 border-b border-[#1e293b] bg-[#0f1629] px-4 py-2"
+      >
+        {(
+          [
+            { id: "observed", label: "Real Data Mode" },
+            { id: "forecast", label: "Forecast Mode" },
+            { id: "simulation", label: "Simulation (Path A)" },
+          ] as Array<{ id: DashboardMode; label: string }>
+        ).map((option) => {
+          const active = mode === option.id;
+          return (
+            <button
+              key={option.id}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => setMode(option.id)}
+              className={`rounded px-3 py-1.5 text-xs font-medium transition-colors ${
+                active
+                  ? "bg-[#3b82f6] text-white"
+                  : "bg-[#1e293b] text-[#94a3b8] hover:text-white"
+              }`}
+            >
+              {option.label}
+            </button>
+          );
+        })}
+      </div>
+
       {/* Model Selector */}
       <ModelSelector
         selectedModel={model}
@@ -394,16 +439,19 @@ export default function Home() {
             aiError={aiAssistError}
           />
         }
-        analysisMode={graph?.analysisMode}
+        analysisMode={dashboardAnalysisMode}
+        forecastPanel={mode === "forecast" ? <ForecastPanel /> : null}
       />
 
-      {/* Input Bar */}
-      <InputBar
-        onSubmit={handleSubmit}
-        isLoading={isAnalyzing || sim.phase === "running"}
-        onRunExample={handleRunExample}
-        inputRef={inputRef}
-      />
+      {/* Input Bar (hidden in forecast mode; forecast has its own form) */}
+      {mode !== "forecast" && (
+        <InputBar
+          onSubmit={handleSubmit}
+          isLoading={isAnalyzing || sim.phase === "running"}
+          onRunExample={handleRunExample}
+          inputRef={inputRef}
+        />
+      )}
 
       {/* Node Editor Modal */}
       {editingNodeId && graph && (

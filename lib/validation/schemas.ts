@@ -7,6 +7,7 @@ import type {
   UncertaintyGraph,
   UncertaintyNode,
 } from "@/lib/types";
+import type { ForecastHorizon, ForecastRequest } from "@/lib/forecast/types";
 
 const VALID_DISTRIBUTIONS: DistributionType[] = [
   "beta",
@@ -24,6 +25,8 @@ const VALID_METHODS: CombinationMethod[] = [
 
 const MAX_QUERY_LENGTH = 20_000;
 const MAX_JSON_BYTES = 1_000_000;
+const MAX_CSV_BYTES = 5_000_000;
+const VALID_HORIZONS: ForecastHorizon[] = [1, 2, 3];
 
 export class ValidationError extends Error {
   constructor(message: string) {
@@ -41,7 +44,8 @@ export interface AnalysisSaveRequest {
 }
 
 export interface CalibrationOutcomeRequest {
-  analysisId: string;
+  analysisId?: string;
+  forecastId?: string;
   predictedProbability: number;
   actualOutcome: boolean;
 }
@@ -221,8 +225,22 @@ export function validateCalibrationOutcomeRequest(
 ): CalibrationOutcomeRequest {
   const body = requireRecord(value, "Calibration outcome request");
 
-  if (typeof body.analysisId !== "string" || body.analysisId.trim() === "") {
-    throw new ValidationError("analysisId is required");
+  const analysisId =
+    typeof body.analysisId === "string" && body.analysisId.trim() !== ""
+      ? body.analysisId.trim()
+      : undefined;
+  const forecastId =
+    typeof body.forecastId === "string" && body.forecastId.trim() !== ""
+      ? body.forecastId.trim()
+      : undefined;
+
+  if (!analysisId && !forecastId) {
+    throw new ValidationError("analysisId or forecastId is required");
+  }
+  if (analysisId && forecastId) {
+    throw new ValidationError(
+      "exactly one of analysisId or forecastId may be provided"
+    );
   }
   if (
     typeof body.predictedProbability !== "number" ||
@@ -237,7 +255,8 @@ export function validateCalibrationOutcomeRequest(
   }
 
   return {
-    analysisId: body.analysisId,
+    analysisId,
+    forecastId,
     predictedProbability: body.predictedProbability,
     actualOutcome: body.actualOutcome,
   };
@@ -263,5 +282,37 @@ export function validateAnalyzeRequest(value: unknown): AnalyzeRequest {
       typeof body.apiKey === "string" && body.apiKey.trim() !== ""
         ? body.apiKey.trim()
         : undefined,
+  };
+}
+
+export function validateForecastRequest(value: unknown): ForecastRequest {
+  const body = requireRecord(value, "Forecast request");
+
+  if (typeof body.csv !== "string" || body.csv.trim() === "") {
+    throw new ValidationError("csv is required");
+  }
+  if (Buffer.byteLength(body.csv, "utf8") > MAX_CSV_BYTES) {
+    throw new ValidationError("csv payload is too large");
+  }
+  if (typeof body.dateColumn !== "string" || body.dateColumn.trim() === "") {
+    throw new ValidationError("dateColumn is required");
+  }
+  if (typeof body.targetColumn !== "string" || body.targetColumn.trim() === "") {
+    throw new ValidationError("targetColumn is required");
+  }
+  const horizon = body.horizon;
+  if (
+    typeof horizon !== "number" ||
+    !Number.isInteger(horizon) ||
+    !VALID_HORIZONS.includes(horizon as ForecastHorizon)
+  ) {
+    throw new ValidationError("horizon must be 1, 2, or 3");
+  }
+
+  return {
+    csv: body.csv,
+    dateColumn: body.dateColumn.trim(),
+    targetColumn: body.targetColumn.trim(),
+    horizon: horizon as ForecastHorizon,
   };
 }
