@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import dotenv from "dotenv";
+import { callChat, OpenRouterCallError } from "./lib/openrouter-client.mjs";
 
 dotenv.config({ path: ".env", quiet: true });
 dotenv.config({ path: ".env.local", override: false, quiet: true });
@@ -29,17 +30,15 @@ if (!liveEnabled) {
   process.exit(0);
 }
 
-const startedAt = Date.now();
-const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-  method: "POST",
-  headers: {
-    Authorization: `Bearer ${apiKey}`,
-    "Content-Type": "application/json",
-    "HTTP-Referer": "https://finess.app",
-    "X-Title": "finESS Pre-Production Smoke",
-  },
-  body: JSON.stringify({
+let result;
+try {
+  result = await callChat({
     model,
+    apiKey,
+    referer: "https://finess.app",
+    title: "finESS Pre-Production Smoke",
+    temperature: 0,
+    responseFormat: { type: "json_object" },
     messages: [
       {
         role: "system",
@@ -52,26 +51,26 @@ const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
           'Interpret this local smoke summary as JSON with keys summary, cautions, nextChecks: rows=4, missing=1, mean=0.75, interval=[0.075,1], threshold=0.5, pAboveThreshold=0.75.',
       },
     ],
-    temperature: 0,
-    response_format: { type: "json_object" },
-  }),
-});
-
-if (!response.ok) {
-  console.log(
-    `OPENROUTER_LIVE_SMOKE_FAILED: provider returned HTTP ${response.status}.`
-  );
+  });
+} catch (error) {
+  if (error instanceof OpenRouterCallError) {
+    console.log(
+      `OPENROUTER_LIVE_SMOKE_FAILED: ${error.code}${
+        error.httpStatus ? ` (HTTP ${error.httpStatus})` : ""
+      } cost=$${(error.costUsd ?? 0).toFixed(4)}`
+    );
+    process.exit(1);
+  }
+  console.log(`OPENROUTER_LIVE_SMOKE_FAILED: ${error?.message ?? String(error)}`);
   process.exit(1);
 }
 
-const data = await response.json();
-const content = data?.choices?.[0]?.message?.content;
-if (typeof content !== "string" || content.trim() === "") {
+if (typeof result.content !== "string" || result.content.trim() === "") {
   console.log("OPENROUTER_LIVE_SMOKE_FAILED: provider returned no content.");
   process.exit(1);
 }
 
-const insight = parseJsonObject(content);
+const insight = parseJsonObject(result.content);
 for (const key of ["summary", "cautions", "nextChecks"]) {
   if (!(key in insight)) {
     console.log(`OPENROUTER_LIVE_SMOKE_FAILED: missing JSON key ${key}.`);
@@ -80,7 +79,7 @@ for (const key of ["summary", "cautions", "nextChecks"]) {
 }
 
 console.log(
-  `OPENROUTER_LIVE_SMOKE_OK: model=${model}; latencyMs=${Date.now() - startedAt}; jsonKeys=summary,cautions,nextChecks`
+  `OPENROUTER_LIVE_SMOKE_OK: model=${result.model}; latencyMs=${result.latencyMs}; costUsd=${result.costUsd.toFixed(4)}; retryCount=${result.retryCount}; jsonKeys=summary,cautions,nextChecks`
 );
 
 function firstConfiguredModel(raw) {

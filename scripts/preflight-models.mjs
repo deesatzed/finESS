@@ -6,12 +6,12 @@
 // click. Companion to scripts/check-env.mjs and scripts/openrouter-live-smoke.mjs.
 
 import dotenv from "dotenv";
+import { callChat, OpenRouterCallError } from "./lib/openrouter-client.mjs";
 
 dotenv.config({ path: ".env", quiet: true });
 dotenv.config({ path: ".env.local", override: false, quiet: true });
 
 const PER_CALL_TIMEOUT_MS = 30_000;
-const ENDPOINT = "https://openrouter.ai/api/v1/chat/completions";
 
 const apiKey = process.env.OPENROUTER_API_KEY?.trim();
 const rawModels = process.env.OPENROUTER_MODELS;
@@ -55,71 +55,45 @@ for (const failure of failures) {
 process.exit(1);
 
 async function probeModel(modelId) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), PER_CALL_TIMEOUT_MS);
   try {
-    const response = await fetch(ENDPOINT, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://finess.app",
-        "X-Title": "finESS Model Preflight",
-      },
-      body: JSON.stringify({
-        model: modelId,
-        messages: [{ role: "user", content: "ping" }],
-        temperature: 0,
-      }),
-      signal: controller.signal,
+    const result = await callChat({
+      model: modelId,
+      apiKey,
+      referer: "https://finess.app",
+      title: "finESS Model Preflight",
+      temperature: 0,
+      timeoutMs: PER_CALL_TIMEOUT_MS,
+      // Preflight intentionally disables the per-call budget guard: a probe
+      // that returns content or tool_calls is "reachable" regardless of cost,
+      // and the runtime routes are where we enforce the budget gate.
+      costBudgetUsd: 0,
+      messages: [{ role: "user", content: "ping" }],
     });
 
-    if (!response.ok) {
-      const detail = await safeReadShortText(response);
-      const reasonSuffix = detail ? `: ${detail}` : "";
-      return {
-        ok: false,
-        reason: `HTTP ${response.status}${reasonSuffix}`,
-      };
-    }
-
-    let data;
-    try {
-      data = await response.json();
-    } catch {
-      return { ok: false, reason: "response body was not valid JSON" };
-    }
-
-    const choice = data?.choices?.[0]?.message;
-    const content = choice?.content;
-    const toolCalls = choice?.tool_calls;
-
-    const hasContent = typeof content === "string" && content.trim() !== "";
-    const hasToolCalls = Array.isArray(toolCalls) && toolCalls.length > 0;
-
-    if (!hasContent && !hasToolCalls) {
+    // The legacy preflight also accepted tool_calls as a sign of life;
+    // callChat already treats either content or tool_calls as success.
+    if (
+      (!result.content || result.content.trim() === "") &&
+      !(Array.isArray(result.toolCalls) && result.toolCalls.length > 0)
+    ) {
       return { ok: false, reason: "empty content and no tool_calls" };
     }
-
     return { ok: true };
   } catch (error) {
-    if (error?.name === "AbortError") {
-      return { ok: false, reason: `timeout after ${PER_CALL_TIMEOUT_MS}ms` };
+    if (error instanceof OpenRouterCallError) {
+      if (error.code === "TIMEOUT") {
+        return { ok: false, reason: `timeout after ${PER_CALL_TIMEOUT_MS}ms` };
+      }
+      if (error.code === "HTTP_ERROR") {
+        return { ok: false, reason: `HTTP ${error.httpStatus ?? "?"}` };
+      }
+      if (error.code === "EMPTY_RESPONSE") {
+        return { ok: false, reason: "empty content and no tool_calls" };
+      }
+      return { ok: false, reason: `${error.code}: ${error.message}` };
     }
     const message = error instanceof Error ? error.message : String(error);
     return { ok: false, reason: `network error: ${message}` };
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-async function safeReadShortText(response) {
-  try {
-    const text = await response.text();
-    const trimmed = text.trim().replace(/\s+/g, " ");
-    return trimmed.length > 160 ? `${trimmed.slice(0, 157)}...` : trimmed;
-  } catch {
-    return "";
   }
 }
 

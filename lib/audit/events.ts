@@ -11,7 +11,8 @@ export type AuditEventType =
   | "calibration.record"
   | "calibration.access_denied"
   | "real_data.assist"
-  | "real_data.assist_denied";
+  | "real_data.assist_denied"
+  | "ai_provider_call";
 
 interface AuditEventInput {
   type: AuditEventType;
