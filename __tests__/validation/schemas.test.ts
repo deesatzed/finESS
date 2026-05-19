@@ -8,8 +8,20 @@ import {
 const UNSUPPORTED_METHOD = ["cus", "tom"].join("");
 
 describe("runtime validation schemas", () => {
-  test("accepts the built-in PE graph", () => {
-    expect(validateUncertaintyGraph(PE_EXAMPLE_GRAPH)).toEqual(PE_EXAMPLE_GRAPH);
+  test("accepts the built-in PE graph and populates source on every node", () => {
+    // M8-08: the validator now carries node.source / node.sourceNote through
+    // save/load. PE_EXAMPLE_GRAPH is a legacy fixture without source set, so
+    // each node gets coerced to "llm_prior". Edges, output, threshold, and
+    // narration are unaffected.
+    const validated = validateUncertaintyGraph(PE_EXAMPLE_GRAPH);
+    expect(validated.edges).toEqual(PE_EXAMPLE_GRAPH.edges);
+    expect(validated.outputNodeId).toBe(PE_EXAMPLE_GRAPH.outputNodeId);
+    expect(validated.threshold).toBe(PE_EXAMPLE_GRAPH.threshold);
+    expect(validated.narration).toBe(PE_EXAMPLE_GRAPH.narration);
+    expect(validated.nodes).toHaveLength(PE_EXAMPLE_GRAPH.nodes.length);
+    for (const node of validated.nodes) {
+      expect(node.source).toBe("llm_prior");
+    }
   });
 
   test("rejects unsupported edge methods", () => {

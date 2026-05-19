@@ -284,15 +284,99 @@ describe("single-user beta workflow", () => {
       },
     });
   });
-});
 
-// TODO (M8-02 follow-up): add an end-to-end case that exercises
-// save -> load -> NodeEditor edit -> save and asserts node.source is
-// preserved as "user_override" across the round trip. Doing so today
-// would require teaching validateUncertaintyGraph in lib/validation/schemas.ts
-// to carry the `source` / `sourceNote` fields through persistence — that
-// file is owned by a different mitigation task in the current parallel
-// build, so the unit-level coverage in __tests__/ai/parse-response.test.ts
-// stands in for now. Re-enable here once the validator carries provenance.
+  test("M8-08: node source and sourceNote survive save/load round trip", async () => {
+    // Graph with three nodes carrying every supported source value plus
+    // sourceNote, mimicking the post-edit state NodeEditor produces.
+    const provenanceGraph = {
+      ...PE_EXAMPLE_GRAPH,
+      nodes: PE_EXAMPLE_GRAPH.nodes.map((node, index) => {
+        if (index === 0) {
+          return { ...node, source: "user_override", sourceNote: "edited locally" };
+        }
+        if (index === 1) {
+          return { ...node, source: "literature", sourceNote: "Wells 2019 N=3200" };
+        }
+        // Index 2 omits source entirely; validator must coerce to "llm_prior".
+        const stripped: Record<string, unknown> = { ...node };
+        delete stripped.source;
+        delete stripped.sourceNote;
+        return stripped;
+      }),
+    };
+
+    const save = await analysesRoute.POST(
+      makeRequest(
+        "/api/analyses",
+        {
+          query: "M8-08 provenance round trip",
+          graph: provenanceGraph,
+          result: null,
+          sensitivity: null,
+          seed: null,
+        },
+        "POST",
+        session
+      )
+    );
+    const saved = await readJson(save);
+    expect(save.status).toBe(201);
+
+    const loadedResponse = await analysisRoute.GET(
+      makeRequest(`/api/analyses/${saved.id}`, undefined, "GET", session),
+      { params: { id: saved.id as string } }
+    );
+    const loaded = await readJson(loadedResponse);
+    expect(loadedResponse.status).toBe(200);
+
+    const loadedNodes = (loaded.graph as { nodes: Array<Record<string, unknown>> })
+      .nodes;
+    expect(loadedNodes[0].source).toBe("user_override");
+    expect(loadedNodes[0].sourceNote).toBe("edited locally");
+    expect(loadedNodes[1].source).toBe("literature");
+    expect(loadedNodes[1].sourceNote).toBe("Wells 2019 N=3200");
+    // Missing source is coerced rather than dropped — downstream UI can rely
+    // on node.source always being set after a round trip.
+    expect(loadedNodes[2].source).toBe("llm_prior");
+    expect(loadedNodes[2].sourceNote).toBeUndefined();
+  });
+
+  test("M8-08: unknown source string is coerced to llm_prior on save/load", async () => {
+    const bogusGraph = {
+      ...PE_EXAMPLE_GRAPH,
+      nodes: PE_EXAMPLE_GRAPH.nodes.map((node, index) =>
+        index === 0
+          ? { ...node, source: "definitely-not-a-known-source-value" }
+          : node
+      ),
+    };
+
+    const save = await analysesRoute.POST(
+      makeRequest(
+        "/api/analyses",
+        {
+          query: "M8-08 bogus source coercion",
+          graph: bogusGraph,
+          result: null,
+          sensitivity: null,
+          seed: null,
+        },
+        "POST",
+        session
+      )
+    );
+    const saved = await readJson(save);
+    expect(save.status).toBe(201);
+
+    const loadedResponse = await analysisRoute.GET(
+      makeRequest(`/api/analyses/${saved.id}`, undefined, "GET", session),
+      { params: { id: saved.id as string } }
+    );
+    const loaded = await readJson(loadedResponse);
+    const loadedNodes = (loaded.graph as { nodes: Array<Record<string, unknown>> })
+      .nodes;
+    expect(loadedNodes[0].source).toBe("llm_prior");
+  });
+});
 
 // TODO(R6-01): Add UI assertion that PathADraftBanner text appears on Path A view once a UI/browser E2E harness is wired in (current __tests__/e2e suite is API-route-only and does not render React).

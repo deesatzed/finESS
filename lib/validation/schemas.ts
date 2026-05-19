@@ -145,7 +145,7 @@ function validateNode(value: unknown): UncertaintyNode {
     throw new ValidationError(`Node '${node.id}' must have a unit string`);
   }
 
-  return {
+  const validated: UncertaintyNode = {
     id: node.id,
     name: node.name,
     description: node.description,
@@ -155,7 +155,19 @@ function validateNode(value: unknown): UncertaintyNode {
     range: [node.range[0], node.range[1]],
     unit: node.unit,
     group: typeof node.group === "string" ? node.group : undefined,
+    // M8-08: carry provenance through save/load. Mirror the coercion in
+    // lib/ai/parse-response.ts:normalizeNode so missing/unknown values resolve
+    // to "llm_prior" rather than dropping the field. Without this, user edits
+    // that set source = "user_override" silently revert on next load.
+    source:
+      node.source === "literature" || node.source === "user_override"
+        ? node.source
+        : "llm_prior",
   };
+  if (typeof node.sourceNote === "string" && node.sourceNote.trim() !== "") {
+    validated.sourceNote = node.sourceNote;
+  }
+  return validated;
 }
 
 function validateEdge(value: unknown): ReasoningEdge {
