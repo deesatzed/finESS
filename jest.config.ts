@@ -8,6 +8,32 @@ const config: Config = {
   moduleNameMapper: {
     "^@/(.*)$": "<rootDir>/$1",
   },
+  // A5: ts-jest transform with a JSX-aware override so `.tsx` test files
+  // (and the `.tsx` modules they import — SemanticPanel and friends) can
+  // compile. The project tsconfig sets `jsx: "preserve"` for Next.js's
+  // own build pipeline; Jest needs an actually-compiled JSX target.
+  // `react-jsx` is the modern automatic runtime so test files do not
+  // have to import React themselves. The override does NOT mutate the
+  // shared tsconfig — it only applies inside Jest.
+  transform: {
+    "^.+\\.tsx?$": [
+      "ts-jest",
+      {
+        tsconfig: {
+          jsx: "react-jsx",
+          esModuleInterop: true,
+          module: "commonjs",
+          target: "es2017",
+          moduleResolution: "node",
+          resolveJsonModule: true,
+          strict: true,
+          isolatedModules: true,
+          baseUrl: ".",
+          paths: { "@/*": ["./*"] },
+        },
+      },
+    ],
+  },
   collectCoverageFrom: [
     "lib/**/*.{ts,tsx}",
     "app/api/**/*.{ts,tsx}",
