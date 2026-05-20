@@ -15,7 +15,18 @@ export type AuditEventType =
   | "ai_provider_call"
   | "analyze_multi_proposed"
   | "forecast_request"
-  | "forecast_outcome_recorded";
+  | "forecast_outcome_recorded"
+  // Phase A2: Semantic Mode persistence + API surface. Metadata for these
+  // events follows the cross-cutting PII rules — no API keys, no raw CSV,
+  // no LLM response bodies, no user query free-text, no RAG chunk content.
+  // Only IDs, counts, status enums, and error codes.
+  | "semantic.created"
+  | "semantic.listed"
+  | "semantic.loaded"
+  | "semantic.event_applied"
+  | "semantic.event_rejected"
+  | "semantic.deleted"
+  | "semantic.access_denied";
 
 interface AuditEventInput {
   type: AuditEventType;

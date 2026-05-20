@@ -1,0 +1,70 @@
+{
+  "_comment": "Worked examples embedded in the Semantic Mode component-proposal prompt (A4). Per v2 plan addendum, removing the few-shot regressed AI output to flat 3-node graphs; the worked example below shows the LLM what a rich 6-component decomposition looks like, with a mix of all five supported distribution families (beta, normal, uniform, lognormal, triangular) and explicit dependsOn relationships. The component-proposal step deliberately omits mean/SD/range — those come from Phase B research. The example is static reference data, not product data; it is inlined verbatim into the system prompt by lib/semantic/propose-components.ts and never sent through any code path that consumes it as live LLM output.",
+  "examples": [
+    {
+      "domain": "product-launch",
+      "userQuery": "Will our Q3 product launch hit 10k signups in the first month?",
+      "clarifications": [
+        {
+          "question": "What product segment is this? B2B SaaS, consumer mobile, hardware, or something else?",
+          "answer": "B2B SaaS for fleet logistics operators."
+        },
+        {
+          "question": "Are you counting signups including waitlist conversions, or only post-launch net-new users?",
+          "answer": "Tracking only post-launch new signups (not waitlist)."
+        },
+        {
+          "question": "What is your current pre-launch funnel volume (website visits, waitlist size, pre-orders)?",
+          "answer": "Current pre-launch funnel: 2k website visits/month, 400 waitlist signups."
+        }
+      ],
+      "response": {
+        "components": [
+          {
+            "id": "baseline_traffic",
+            "name": "Baseline website traffic",
+            "description": "Monthly visits to the marketing site at launch time.",
+            "suggestedDistribution": "lognormal",
+            "why": "All conversion percentages multiply against this — a 30% miss here cascades through everything."
+          },
+          {
+            "id": "launch_traffic_lift",
+            "name": "Launch traffic lift",
+            "description": "Multiplier on baseline traffic from launch announcements and PR.",
+            "suggestedDistribution": "triangular",
+            "why": "Most likely +2x; worst case flat; best case +5x. Bounded by realistic PR reach."
+          },
+          {
+            "id": "waitlist_conversion",
+            "name": "Waitlist conversion rate",
+            "description": "Share of pre-launch waitlist members who actually sign up.",
+            "suggestedDistribution": "beta",
+            "why": "Bounded in [0,1] and historically variable (10-60%) across B2B SaaS."
+          },
+          {
+            "id": "cold_visitor_conversion",
+            "name": "Cold visitor signup rate",
+            "description": "Share of net-new visitors who sign up after one visit.",
+            "suggestedDistribution": "beta",
+            "why": "Drives the bulk of the count for product launches with broad reach."
+          },
+          {
+            "id": "competitive_response_p",
+            "name": "Competitor counter-launch probability",
+            "description": "Probability a major competitor announces a comparable product in the same window.",
+            "suggestedDistribution": "beta",
+            "why": "If it fires, conversion rates compress 20-40%."
+          },
+          {
+            "id": "competitive_response_drag",
+            "name": "Conversion drag if competitor responds",
+            "description": "Multiplicative drag on cold_visitor_conversion when the competitor fires.",
+            "suggestedDistribution": "triangular",
+            "why": "Bounded; worst case 0.4x, best case 0.8x.",
+            "dependsOn": ["competitive_response_p", "cold_visitor_conversion"]
+          }
+        ]
+      }
+    }
+  ]
+}

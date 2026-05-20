@@ -64,16 +64,46 @@ model CalibrationOutcome {
   @@index([forecastId, workspaceId])
 }
 
+/// SemanticConversation persists the full state-machine snapshot for a
+/// Semantic Mode conversation (Phase A2). One row per conversation; the
+/// `stateJson` blob is the serialized SemanticState discriminated union
+/// (see lib/semantic/persistence.ts).
+///
+/// Local-only / single-user posture: every row carries both `userId` and
+/// `workspaceId`, enforced via NOT NULL columns and the same ownership
+/// guards used by Analysis. Cascading deletes on User/Workspace match the
+/// LocalSession pattern so wiping an account leaves no orphan rows.
+///
+/// `stateKind` mirrors `SemanticState["kind"]` and is denormalized for
+/// fast filtering ("show me everything still in REVIEWING_RESEARCH").
+model SemanticConversation {
+  id          String   @id @default(cuid())
+  userId      String
+  workspaceId String
+  query       String
+  stateKind   String
+  stateJson   String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([userId, workspaceId, updatedAt])
+  @@index([userId, stateKind])
+}
+
 model User {
   id           String   @id @default(cuid())
   localSubject String   @unique
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  workspaces          Workspace[]
-  sessions            LocalSession[]
-  analyses            Analysis[]
-  calibrationOutcomes CalibrationOutcome[]
+  workspaces            Workspace[]
+  sessions              LocalSession[]
+  analyses              Analysis[]
+  calibrationOutcomes   CalibrationOutcome[]
+  semanticConversations SemanticConversation[]
 }
 
 model Workspace {
@@ -83,10 +113,11 @@ model Workspace {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
-  sessions            LocalSession[]
-  analyses            Analysis[]
-  calibrationOutcomes CalibrationOutcome[]
+  user                  User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessions              LocalSession[]
+  analyses              Analysis[]
+  calibrationOutcomes   CalibrationOutcome[]
+  semanticConversations SemanticConversation[]
 
   @@index([userId])
 }

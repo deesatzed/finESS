@@ -1,0 +1,52 @@
+{
+  "_comment": "Worked examples embedded in the Semantic Mode clarifier prompt (A3). Two domains are included so the LLM sees that a 'good' clarifying question is not a statistical question; it is a question whose answer would change the modeling approach. The product launch example shows a non-clinical, non-financial decision; the pulmonary embolism example anchors to the original distribclin domain (Principle 4 calibration). Both examples are static reference data, not product data. They are inlined verbatim into the system prompt by lib/semantic/clarify.ts and never sent through any code path that consumes them as live LLM output.",
+  "examples": [
+    {
+      "domain": "product",
+      "userQuery": "Will our Q3 product launch hit 10k signups in the first month?",
+      "response": {
+        "questions": [
+          {
+            "id": "q1",
+            "question": "What product segment is this? B2B SaaS, consumer mobile, hardware, or something else?",
+            "why": "Conversion rates and launch dynamics differ by 10x or more across segments; without knowing the segment the prediction is anchored on the wrong base rate."
+          },
+          {
+            "id": "q2",
+            "question": "Are you counting signups including waitlist conversions, or only post-launch net-new users?",
+            "why": "Including waitlist makes the 10k target much easier to hit; the prediction needs the same definition the team will report on."
+          },
+          {
+            "id": "q3",
+            "question": "What is your current pre-launch funnel volume (website visits, waitlist size, pre-orders)?",
+            "why": "Without an observed baseline the prediction is a pure prior; with the baseline we can anchor on your actual conversion behavior.",
+            "defaultAnswer": "Treat the question as 'we have a 5,000-person waitlist and 20k monthly site visitors' if you don't have the numbers handy."
+          }
+        ]
+      }
+    },
+    {
+      "domain": "clinical",
+      "userQuery": "What is the probability this 55-year-old with chest pain has a pulmonary embolism?",
+      "response": {
+        "questions": [
+          {
+            "id": "q1",
+            "question": "Has a D-dimer been drawn, and if so what was the result relative to your lab's cutoff?",
+            "why": "D-dimer drives Bayesian update of the pre-test probability; whether the value is above or below cutoff swings the post-test probability dramatically."
+          },
+          {
+            "id": "q2",
+            "question": "Are there major Wells-score risk factors present (recent surgery, active cancer, immobilization, prior VTE)?",
+            "why": "These factors shift the pre-test probability by tens of percentage points; modeling without them anchors the answer on a generic population mean."
+          },
+          {
+            "id": "q3",
+            "question": "Is the decision you are trying to support 'should we order a CTPA?' or 'can we safely discharge?'",
+            "why": "The two decisions need different thresholds: rule-out wants very high sensitivity, discharge wants very high negative predictive value. The threshold flows from the decision, not the other way around."
+          }
+        ]
+      }
+    }
+  ]
+}
