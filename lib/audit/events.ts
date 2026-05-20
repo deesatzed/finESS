@@ -26,7 +26,14 @@ export type AuditEventType =
   | "semantic.event_applied"
   | "semantic.event_rejected"
   | "semantic.deleted"
-  | "semantic.access_denied";
+  | "semantic.access_denied"
+  // Phase B3: RAG-over-user-documents events. Same PII guarantees as the
+  // other semantic.* events: NO chunk text, NO file bytes, NO LLM
+  // response body; only documentId / chunkCount / mechanism / cost /
+  // latency / error codes are permitted in metadata.
+  | "semantic.document_uploaded"
+  | "semantic.document_deleted"
+  | "semantic.research_rag";
 
 interface AuditEventInput {
   type: AuditEventType;
@@ -71,6 +78,14 @@ export const FORBIDDEN_AUDIT_METADATA_KEYS = new Set([
   "query",
   "prompt",
   "freeText",
+  // B3 additions: never let raw chunk text or file bytes hit the audit log.
+  "chunkText",
+  "chunk_text",
+  "text",
+  "fileBytes",
+  "file_bytes",
+  "documentBytes",
+  "document_bytes",
 ]);
 
 function sanitizeMetadata(metadata: Record<string, unknown>) {
