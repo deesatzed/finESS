@@ -173,8 +173,12 @@ async function extractPdf(buffer: Buffer): Promise<ExtractResult> {
 export async function extractText(
   buffer: Buffer,
   mimeType: string,
-  _filename?: string,
+  // Filename is accepted for future heuristics (mime sniffing on
+  // application/octet-stream uploads, audit logging) but currently
+  // unused by the extractor body.
+  filename?: string,
 ): Promise<ExtractResult> {
+  void filename;
   if (!buffer || buffer.length === 0) {
     throw new ExtractError("extractText: buffer is empty", "EMPTY_INPUT");
   }
