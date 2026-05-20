@@ -1,0 +1,88 @@
+{
+  "kind": "REVIEWING_RESEARCH",
+  "query": "How likely is regional sea level to exceed 0.6m by 2070 in our coastal district?",
+  "questions": [
+    {
+      "id": "q1",
+      "question": "Which emissions trajectory do you want to anchor on (SSP2-4.5, SSP5-8.5)?",
+      "why": "Scenario choice swings the central projection by tens of cm.",
+      "defaultAnswer": "SSP2-4.5"
+    },
+    {
+      "id": "q2",
+      "question": "Should regional subsidence be modelled separately?",
+      "why": "Many coastal sites have local subsidence that adds linearly to global SLR.",
+      "defaultAnswer": "yes, separate node"
+    }
+  ],
+  "answers": {
+    "q1": "SSP2-4.5",
+    "q2": "yes, separate node"
+  },
+  "components": [
+    {
+      "id": "global_slr_mean",
+      "name": "Global mean sea-level rise by 2070",
+      "description": "IPCC central projection for the chosen SSP trajectory.",
+      "suggestedDistribution": "normal",
+      "why": "Anchors regional projection; widest single source of variance."
+    },
+    {
+      "id": "regional_amplification",
+      "name": "Regional amplification factor",
+      "description": "Ocean dynamics scaling factor relative to global mean for this coast.",
+      "suggestedDistribution": "triangular",
+      "why": "Bounded but uncertain; triangular captures the most-likely-with-extremes shape."
+    },
+    {
+      "id": "subsidence_rate",
+      "name": "Local subsidence rate (mm/year)",
+      "description": "Long-term local land subsidence; integrated over the 45-year horizon.",
+      "suggestedDistribution": "normal",
+      "why": "Adds linearly to relative SLR; well-constrained by tide-gauge records."
+    },
+    {
+      "id": "ice_sheet_collapse_tail",
+      "name": "Ice-sheet rapid-collapse contribution",
+      "description": "Low-probability, high-impact tail from Antarctic ice instability.",
+      "suggestedDistribution": "lognormal",
+      "why": "Right-skewed tail; the variance lives in the upper tail."
+    }
+  ],
+  "threshold": 0.6,
+  "thresholdLabel": "high regional flood risk",
+  "bundles": {
+    "global_slr_mean": {
+      "componentId": "global_slr_mean",
+      "mechanism": "llm_prior",
+      "proposedDistribution": "normal",
+      "proposedParams": { "mean": 0.38, "sd": 0.12 },
+      "reasoning": "IPCC AR6 SSP2-4.5 reports 0.32-0.45m likely range by 2070; using midpoint and CI-to-SD."
+    },
+    "regional_amplification": {
+      "componentId": "regional_amplification",
+      "mechanism": "llm_prior",
+      "proposedDistribution": "triangular",
+      "proposedParams": { "min": 0.85, "mode": 1.05, "max": 1.30 },
+      "reasoning": "Regional ocean dynamics typically amplify mid-latitude coastal SLR by 5-30% above global mean."
+    },
+    "subsidence_rate": {
+      "componentId": "subsidence_rate",
+      "mechanism": "llm_prior",
+      "proposedDistribution": "normal",
+      "proposedParams": { "mean": 2.1, "sd": 0.6 },
+      "reasoning": "Tide-gauge analysis for similar coastal districts typically reports 1.5-3 mm/yr subsidence."
+    },
+    "ice_sheet_collapse_tail": {
+      "componentId": "ice_sheet_collapse_tail",
+      "mechanism": "llm_prior",
+      "proposedDistribution": "lognormal",
+      "proposedParams": { "mean": 0.05, "sd": 0.10 },
+      "reasoning": "Low-probability tail contribution; central is small but upper tail is the main risk."
+    }
+  },
+  "accepted": {
+    "global_slr_mean": true,
+    "regional_amplification": true
+  }
+}

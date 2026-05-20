@@ -1,0 +1,34 @@
+{
+  "kind": "AWAITING_ANSWERS",
+  "query": "Can a 62-year-old retire at 65 on a 1.4M portfolio plus social security?",
+  "questions": [
+    {
+      "id": "q1",
+      "question": "Planning horizon in years?",
+      "why": "Drawdown variance compounds non-linearly with horizon length.",
+      "defaultAnswer": "30 years"
+    },
+    {
+      "id": "q2",
+      "question": "What annual real spending in today's dollars?",
+      "why": "Spending is the largest single driver of failure probability.",
+      "defaultAnswer": "60000"
+    },
+    {
+      "id": "q3",
+      "question": "Any major one-time costs expected (home repair, healthcare event)?",
+      "why": "Episodic shocks need probabilistic event gates, not mean smoothing.",
+      "defaultAnswer": "no large planned expenses"
+    },
+    {
+      "id": "q4",
+      "question": "How is the portfolio allocated (stocks / bonds / cash)?",
+      "why": "Asset allocation drives the central return assumption and the variance.",
+      "defaultAnswer": "60/40 stock-bond"
+    }
+  ],
+  "answers": {
+    "q1": "30 years",
+    "q2": "60000"
+  }
+}

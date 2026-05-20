@@ -12,6 +12,7 @@ import CalibrationModal from "@/components/CalibrationModal";
 import { RealDataPanel } from "@/components/RealDataPanel";
 import { ForecastPanel } from "@/components/ForecastPanel";
 import { MultiProposalsPanel } from "@/components/MultiProposalsPanel";
+import { SemanticPanel } from "@/components/SemanticPanel";
 import NodeNetwork from "@/components/panels/NodeNetwork";
 import LiveDistribution from "@/components/panels/LiveDistribution";
 import SensitivityRadar from "@/components/panels/SensitivityRadar";
@@ -28,7 +29,17 @@ import type { ProposalResult } from "@/lib/ai/multi-proposer";
 // R6-02: "simulation-multi" is a sibling of "simulation" that fans out the
 // query to every configured proposer and renders MultiProposalsPanel in
 // place of the Dashboard. Dashboard.tsx itself stays untouched.
-type DashboardMode = "simulation" | "simulation-multi" | "observed" | "forecast";
+// A5: "semantic" is the 5th tab — Semantic Mode — rendered in place of
+// the Dashboard via SemanticPanel. The cockpit (6-panel Dashboard) is
+// re-mounted by SemanticPanel once the conversation hits
+// REVIEWING_RESULT, so the existing six-panel grid is reused without
+// touching Dashboard.tsx.
+type DashboardMode =
+  | "simulation"
+  | "simulation-multi"
+  | "observed"
+  | "forecast"
+  | "semantic";
 
 interface MultiSummary {
   successCount: number;
@@ -142,6 +153,8 @@ export default function Home() {
   // - "simulation-multi" intentionally maps to undefined here — the
   //   MultiProposalsPanel renders ABOVE the Dashboard region (Dashboard is
   //   short-circuited), so no banner from the regular path is needed.
+  // - "semantic" also maps to undefined — SemanticPanel renders in place
+  //   of Dashboard entirely; its cockpit handoff re-uses Dashboard.
   // - Otherwise we defer to the active graph's analysisMode (set by Path A
   //   or Path B flows).
   const dashboardAnalysisMode: "simulation" | "observed" | "forecast" | undefined =
@@ -381,7 +394,7 @@ export default function Home() {
         )}
       </header>
 
-      {/* Mode toggle: simulation | simulation-multi | observed | forecast */}
+      {/* Mode toggle: simulation | simulation-multi | observed | forecast | semantic */}
       <div
         role="tablist"
         aria-label="Analysis mode"
@@ -393,6 +406,7 @@ export default function Home() {
             { id: "forecast", label: "Forecast Mode" },
             { id: "simulation", label: "Simulation (Path A)" },
             { id: "simulation-multi", label: "Multi-Proposer (Path A)" },
+            { id: "semantic", label: "Semantic Mode" },
           ] as Array<{ id: DashboardMode; label: string }>
         ).map((option) => {
           const active = mode === option.id;
@@ -442,7 +456,10 @@ export default function Home() {
         aiAssistLoading={aiAssistLoading}
       />
 
-      {/* Multi-proposer view replaces the Dashboard when active. */}
+      {/* Multi-proposer view replaces the Dashboard when active.
+          Semantic view also replaces the Dashboard (its cockpit handoff
+          re-mounts Dashboard internally once the conversation result
+          lands). */}
       {mode === "simulation-multi" ? (
         <div className="flex-1 min-h-0 overflow-y-auto p-2">
           {multiProposals ? (
@@ -459,6 +476,8 @@ export default function Home() {
             </div>
           )}
         </div>
+      ) : mode === "semantic" ? (
+        <SemanticPanel />
       ) : (
         <Dashboard
           nodeNetwork={
@@ -524,8 +543,10 @@ export default function Home() {
         />
       )}
 
-      {/* Input Bar (hidden in forecast mode; forecast has its own form) */}
-      {mode !== "forecast" && (
+      {/* Input Bar (hidden in forecast mode; forecast has its own form.
+          Also hidden in semantic mode; SemanticPanel owns its own
+          input affordance.) */}
+      {mode !== "forecast" && mode !== "semantic" && (
         <InputBar
           onSubmit={mode === "simulation-multi" ? handleMultiSubmit : handleSubmit}
           isLoading={isAnalyzing || sim.phase === "running"}

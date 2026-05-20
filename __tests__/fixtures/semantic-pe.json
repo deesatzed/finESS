@@ -1,0 +1,66 @@
+{
+  "kind": "REVIEWING_COMPONENTS",
+  "query": "What is the probability a 55-year-old with chest pain has PE?",
+  "questions": [
+    {
+      "id": "q1",
+      "question": "Does the patient have known risk factors (recent surgery, malignancy, immobility)?",
+      "why": "Risk factors swing pre-test probability dramatically.",
+      "defaultAnswer": "no known risk factors"
+    },
+    {
+      "id": "q2",
+      "question": "Is a D-dimer result available?",
+      "why": "D-dimer is the most common rule-out test in low pre-test probability presentations.",
+      "defaultAnswer": "not yet"
+    },
+    {
+      "id": "q3",
+      "question": "What imaging is feasible (CTPA, V/Q, none)?",
+      "why": "Imaging modality determines downstream sensitivity and specificity.",
+      "defaultAnswer": "CTPA available"
+    }
+  ],
+  "answers": {
+    "q1": "no known risk factors",
+    "q2": "not yet",
+    "q3": "CTPA available"
+  },
+  "components": [
+    {
+      "id": "pretest_prob",
+      "name": "Pre-test probability",
+      "description": "Wells score derived pre-test probability of PE for this presentation.",
+      "suggestedDistribution": "beta",
+      "why": "Anchors the entire Bayesian update; small shifts cascade."
+    },
+    {
+      "id": "d_dimer_sensitivity",
+      "name": "D-dimer sensitivity",
+      "description": "Sensitivity of high-sensitivity ELISA D-dimer for PE in this age group.",
+      "suggestedDistribution": "beta",
+      "why": "Determines how strongly a negative D-dimer can rule out PE."
+    },
+    {
+      "id": "d_dimer_specificity",
+      "name": "D-dimer specificity",
+      "description": "Specificity is age-dependent and a known weak point of the test.",
+      "suggestedDistribution": "beta",
+      "why": "Low specificity drives false-positive workups."
+    },
+    {
+      "id": "ctpa_sensitivity",
+      "name": "CTPA sensitivity",
+      "description": "Sensitivity of modern multi-detector CTPA for segmental and larger PE.",
+      "suggestedDistribution": "beta",
+      "why": "Limits how confidently a negative CTPA closes the workup."
+    },
+    {
+      "id": "ctpa_specificity",
+      "name": "CTPA specificity",
+      "description": "Specificity of modern CTPA; high but not perfect.",
+      "suggestedDistribution": "beta",
+      "why": "Determines false-positive rate driving unnecessary anticoagulation."
+    }
+  ]
+}
