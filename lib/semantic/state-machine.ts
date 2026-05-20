@@ -27,6 +27,13 @@
  *     than no-ops. An out-of-band research response indicates a consumer
  *     bug (race condition, duplicated handler, stale promise resolving
  *     after `back`). Surfacing it loudly is safer than silently dropping.
+ *  4. B6: `startResearch` carries an OPTIONAL `inputs` field used by the
+ *     server-side dispatch path (auto-advance) to pass mechanism-specific
+ *     inputs (CSV rows for forecast/empirical, estimates for expert_panel,
+ *     etc.) directly to the adapter. The reducer ignores `inputs` — it
+ *     does NOT land in persisted state. This keeps A1's `inFlight` shape
+ *     unchanged (52 prior tests stay green) while letting the route hand
+ *     the same event payload to both the reducer and the dispatcher.
  */
 
 import type {
@@ -140,6 +147,46 @@ export type SemanticStateKind = SemanticState["kind"];
 // Event shape
 // ---------------------------------------------------------------------------
 
+/**
+ * Optional mechanism-specific inputs carried on a `startResearch` event.
+ *
+ * B6: the reducer IGNORES this field (it is not part of any state
+ * transition rule). The route's auto-advance dispatcher reads it to
+ * decide which adapter to fire and with what arguments. Defined as an
+ * open record so future mechanisms can add fields without rev-locking
+ * the union. Required-field enforcement happens in
+ * `lib/semantic/auto-advance.ts` per mechanism, NOT in the validator —
+ * a missing mechanism-specific input fails research with a typed
+ * `fail` event rather than 400-ing the PATCH.
+ */
+export interface StartResearchInputs {
+  // CSV-based mechanisms (forecast + empirical).
+  csvRows?: Array<Record<string, string | number>>;
+  dateColumn?: string;
+  targetColumn?: string;
+  horizon?: number;
+  threshold?: number | null;
+
+  // Expert-panel mechanism.
+  estimates?: number[];
+  labels?: string[];
+  hardBounds?: { min: number; max: number };
+  distribution?:
+    | "normal"
+    | "beta"
+    | "uniform"
+    | "lognormal"
+    | "triangular";
+
+  // RAG mechanism (per-component scoping is a future refinement; today
+  // RAG searches all workspace documents).
+  documentIds?: string[];
+
+  // Web-search mechanism.
+  searchMaxResults?: number;
+  searchQuery?: string;
+}
+
 export type SemanticEvent =
   | { type: "start"; query: string }
   | { type: "clarificationsReceived"; questions: ClarifyingQuestion[] }
@@ -149,7 +196,17 @@ export type SemanticEvent =
   | { type: "editComponent"; componentId: string; patch: ComponentPatch }
   | { type: "acceptComponents" }
   | { type: "setThreshold"; threshold: number; thresholdLabel: string }
-  | { type: "startResearch"; componentId: string; mechanism: ResearchMechanism }
+  | {
+      type: "startResearch";
+      componentId: string;
+      mechanism: ResearchMechanism;
+      /**
+       * B6: optional mechanism-specific inputs. Server-side dispatcher
+       * reads these; the reducer ignores them. NEVER landed in
+       * persisted state (`reduceResearching` does not store inputs).
+       */
+      inputs?: StartResearchInputs;
+    }
   | {
       type: "researchReceived";
       componentId: string;
@@ -456,7 +513,11 @@ function reduceSettingThreshold(
 /**
  * RESEARCHING accepts:
  *  - startResearch: adds a component to in-flight (mechanism recorded
- *    for audit / UI badge purposes).
+ *    for audit / UI badge purposes). Decision #4: any `event.inputs`
+ *    are IGNORED here — they're consumed by the dispatcher in
+ *    `lib/semantic/auto-advance.ts`. Persisted state never carries the
+ *    inputs (which can include raw CSV rows we will not write to the
+ *    state JSON or audit log).
  *  - researchReceived: removes from in-flight, stores bundle. If every
  *    component now has a bundle AND in-flight is empty, transitions to
  *    REVIEWING_RESEARCH.

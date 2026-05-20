@@ -1069,3 +1069,421 @@ describe("validateSemanticPatchRequest — fail event", () => {
     );
   });
 });
+
+describe("validateSemanticPatchRequest — startResearch event with inputs (B6)", () => {
+  function buildStartResearch(
+    componentId: string,
+    mechanism: string,
+    inputs?: Record<string, unknown>,
+  ): unknown {
+    const event: Record<string, unknown> = {
+      type: "startResearch",
+      componentId,
+      mechanism,
+    };
+    if (inputs !== undefined) event.inputs = inputs;
+    return { event };
+  }
+
+  test("accepts startResearch without inputs (LLM-only mechanisms)", () => {
+    const out = validateSemanticPatchRequest(
+      buildStartResearch("c1", "llm_prior"),
+    );
+    expect(out.event).toMatchObject({
+      type: "startResearch",
+      componentId: "c1",
+      mechanism: "llm_prior",
+    });
+  });
+
+  test("rejects unknown inputs key", () => {
+    expectThrows(
+      () =>
+        validateSemanticPatchRequest(
+          buildStartResearch("c1", "llm_prior", { wormhole: true }),
+        ),
+      /unexpected field "wormhole"/,
+    );
+  });
+
+  describe("csvRows input", () => {
+    const baseRow = { date: "2024-01-01", value: 10 };
+
+    test("accepts numeric + string cells", () => {
+      const out = validateSemanticPatchRequest(
+        buildStartResearch("c1", "ensemble_forecast", {
+          csvRows: [baseRow, { date: "2024-01-02", value: 11.5 }],
+        }),
+      );
+      expect((out.event as { inputs: { csvRows: unknown[] } }).inputs.csvRows).toHaveLength(2);
+    });
+
+    test("coerces null cells to empty string", () => {
+      const out = validateSemanticPatchRequest(
+        buildStartResearch("c1", "ensemble_forecast", {
+          csvRows: [{ date: "2024-01-01", value: null }],
+        }),
+      );
+      const rows = (out.event as { inputs: { csvRows: Array<Record<string, unknown>> } }).inputs.csvRows;
+      expect(rows[0].value).toBe("");
+    });
+
+    test("rejects non-array csvRows", () => {
+      expectThrows(
+        () =>
+          validateSemanticPatchRequest(
+            buildStartResearch("c1", "ensemble_forecast", { csvRows: "csv" }),
+          ),
+        /csvRows must be an array/,
+      );
+    });
+
+    test("rejects csv row that is not an object", () => {
+      expectThrows(
+        () =>
+          validateSemanticPatchRequest(
+            buildStartResearch("c1", "ensemble_forecast", { csvRows: ["row1"] }),
+          ),
+        /csvRows\[0\] must be an object/,
+      );
+    });
+
+    test("rejects non-scalar cell value", () => {
+      expectThrows(
+        () =>
+          validateSemanticPatchRequest(
+            buildStartResearch("c1", "ensemble_forecast", {
+              csvRows: [{ date: "2024-01-01", value: { nested: true } }],
+            }),
+          ),
+        /must be a string, number, or null/,
+      );
+    });
+
+    test("rejects csvRows exceeding cap", () => {
+      const huge = Array.from({ length: 10_001 }, () => baseRow);
+      expectThrows(
+        () =>
+          validateSemanticPatchRequest(
+            buildStartResearch("c1", "ensemble_forecast", { csvRows: huge }),
+          ),
+        /exceeds 10000 rows/,
+      );
+    });
+  });
+
+  describe("date / target columns", () => {
+    test("accepts non-empty strings", () => {
+      const out = validateSemanticPatchRequest(
+        buildStartResearch("c1", "ensemble_forecast", {
+          dateColumn: "date",
+          targetColumn: "value",
+        }),
+      );
+      const inputs = (out.event as { inputs: { dateColumn: string; targetColumn: string } }).inputs;
+      expect(inputs.dateColumn).toBe("date");
+      expect(inputs.targetColumn).toBe("value");
+    });
+
+    test("rejects empty dateColumn", () => {
+      expectThrows(
+        () =>
+          validateSemanticPatchRequest(
+            buildStartResearch("c1", "ensemble_forecast", { dateColumn: "  " }),
+          ),
+        /dateColumn must be a non-empty string/,
+      );
+    });
+
+    test("rejects empty targetColumn", () => {
+      expectThrows(
+        () =>
+          validateSemanticPatchRequest(
+            buildStartResearch("c1", "empirical_observation", { targetColumn: "" }),
+          ),
+        /targetColumn must be a non-empty string/,
+      );
+    });
+  });
+
+  describe("horizon + threshold", () => {
+    test("accepts finite horizon", () => {
+      const out = validateSemanticPatchRequest(
+        buildStartResearch("c1", "ensemble_forecast", { horizon: 2 }),
+      );
+      expect((out.event as { inputs: { horizon: number } }).inputs.horizon).toBe(2);
+    });
+
+    test("rejects non-finite horizon", () => {
+      expectThrows(
+        () =>
+          validateSemanticPatchRequest(
+            buildStartResearch("c1", "ensemble_forecast", { horizon: Number.POSITIVE_INFINITY }),
+          ),
+        /horizon must be a finite number/,
+      );
+    });
+
+    test("accepts threshold as a finite number", () => {
+      const out = validateSemanticPatchRequest(
+        buildStartResearch("c1", "empirical_observation", { threshold: 0.5 }),
+      );
+      expect((out.event as { inputs: { threshold: unknown } }).inputs.threshold).toBe(0.5);
+    });
+
+    test("accepts threshold as null (cleared)", () => {
+      const out = validateSemanticPatchRequest(
+        buildStartResearch("c1", "empirical_observation", { threshold: null }),
+      );
+      expect((out.event as { inputs: { threshold: unknown } }).inputs.threshold).toBeNull();
+    });
+
+    test("rejects threshold as NaN", () => {
+      expectThrows(
+        () =>
+          validateSemanticPatchRequest(
+            buildStartResearch("c1", "empirical_observation", {
+              threshold: Number.NaN,
+            }),
+          ),
+        /threshold must be a finite number or null/,
+      );
+    });
+  });
+
+  describe("estimates (expert_panel)", () => {
+    test("accepts an array of finite numbers", () => {
+      const out = validateSemanticPatchRequest(
+        buildStartResearch("c1", "expert_panel", { estimates: [10, 20, 30] }),
+      );
+      expect((out.event as { inputs: { estimates: number[] } }).inputs.estimates).toEqual([10, 20, 30]);
+    });
+
+    test("rejects non-array estimates", () => {
+      expectThrows(
+        () =>
+          validateSemanticPatchRequest(
+            buildStartResearch("c1", "expert_panel", { estimates: "ten" }),
+          ),
+        /estimates must be an array/,
+      );
+    });
+
+    test("rejects estimates exceeding the cap", () => {
+      const huge = Array.from({ length: 101 }, (_, i) => i);
+      expectThrows(
+        () =>
+          validateSemanticPatchRequest(
+            buildStartResearch("c1", "expert_panel", { estimates: huge }),
+          ),
+        /exceeds 100 entries/,
+      );
+    });
+
+    test("rejects non-finite estimate naming the index", () => {
+      expectThrows(
+        () =>
+          validateSemanticPatchRequest(
+            buildStartResearch("c1", "expert_panel", {
+              estimates: [1, Number.NaN, 3],
+            }),
+          ),
+        /estimates\[1\] must be a finite number/,
+      );
+    });
+  });
+
+  describe("labels (expert_panel)", () => {
+    test("accepts string labels", () => {
+      const out = validateSemanticPatchRequest(
+        buildStartResearch("c1", "expert_panel", {
+          labels: ["alice", "bob"],
+        }),
+      );
+      expect((out.event as { inputs: { labels: string[] } }).inputs.labels).toEqual(["alice", "bob"]);
+    });
+
+    test("rejects non-array labels", () => {
+      expectThrows(
+        () =>
+          validateSemanticPatchRequest(
+            buildStartResearch("c1", "expert_panel", { labels: 5 }),
+          ),
+        /labels must be an array/,
+      );
+    });
+
+    test("rejects non-string label", () => {
+      expectThrows(
+        () =>
+          validateSemanticPatchRequest(
+            buildStartResearch("c1", "expert_panel", { labels: ["alice", 7] }),
+          ),
+        /labels\[1\] must be a string/,
+      );
+    });
+  });
+
+  describe("hardBounds (expert_panel)", () => {
+    test("accepts min < max", () => {
+      const out = validateSemanticPatchRequest(
+        buildStartResearch("c1", "expert_panel", {
+          hardBounds: { min: 0, max: 100 },
+        }),
+      );
+      const hb = (out.event as { inputs: { hardBounds: { min: number; max: number } } }).inputs.hardBounds;
+      expect(hb).toEqual({ min: 0, max: 100 });
+    });
+
+    test("rejects non-object hardBounds", () => {
+      expectThrows(
+        () =>
+          validateSemanticPatchRequest(
+            buildStartResearch("c1", "expert_panel", { hardBounds: [0, 100] }),
+          ),
+        /hardBounds must be an object/,
+      );
+    });
+
+    test("rejects min === max", () => {
+      expectThrows(
+        () =>
+          validateSemanticPatchRequest(
+            buildStartResearch("c1", "expert_panel", {
+              hardBounds: { min: 1, max: 1 },
+            }),
+          ),
+        /min < max/,
+      );
+    });
+
+    test("rejects non-finite bounds", () => {
+      expectThrows(
+        () =>
+          validateSemanticPatchRequest(
+            buildStartResearch("c1", "expert_panel", {
+              hardBounds: { min: 0, max: Number.POSITIVE_INFINITY },
+            }),
+          ),
+        /must be finite numbers/,
+      );
+    });
+  });
+
+  describe("distribution override", () => {
+    test("accepts every valid distribution", () => {
+      for (const dist of ["normal", "beta", "uniform", "lognormal", "triangular"]) {
+        const out = validateSemanticPatchRequest(
+          buildStartResearch("c1", "expert_panel", { distribution: dist }),
+        );
+        const inputs = (out.event as { inputs: { distribution: string } }).inputs;
+        expect(inputs.distribution).toBe(dist);
+      }
+    });
+
+    test("rejects unsupported distribution", () => {
+      expectThrows(
+        () =>
+          validateSemanticPatchRequest(
+            buildStartResearch("c1", "expert_panel", { distribution: "poisson" }),
+          ),
+        /not a supported distribution/,
+      );
+    });
+  });
+
+  describe("documentIds (rag_document)", () => {
+    test("accepts an array of non-empty strings", () => {
+      const out = validateSemanticPatchRequest(
+        buildStartResearch("c1", "rag_document", {
+          documentIds: ["doc_a", "doc_b"],
+        }),
+      );
+      const ids = (out.event as { inputs: { documentIds: string[] } }).inputs.documentIds;
+      expect(ids).toEqual(["doc_a", "doc_b"]);
+    });
+
+    test("rejects non-array documentIds", () => {
+      expectThrows(
+        () =>
+          validateSemanticPatchRequest(
+            buildStartResearch("c1", "rag_document", { documentIds: "doc" }),
+          ),
+        /documentIds must be an array/,
+      );
+    });
+
+    test("rejects empty-string id", () => {
+      expectThrows(
+        () =>
+          validateSemanticPatchRequest(
+            buildStartResearch("c1", "rag_document", {
+              documentIds: ["doc_a", " "],
+            }),
+          ),
+        /documentIds\[1\] must be a non-empty string/,
+      );
+    });
+
+    test("rejects too many ids", () => {
+      const huge = Array.from({ length: 201 }, (_, i) => `doc_${i}`);
+      expectThrows(
+        () =>
+          validateSemanticPatchRequest(
+            buildStartResearch("c1", "rag_document", { documentIds: huge }),
+          ),
+        /exceeds 200 entries/,
+      );
+    });
+  });
+
+  describe("searchMaxResults + searchQuery (web_search)", () => {
+    test("accepts finite positive searchMaxResults; floors to integer", () => {
+      const out = validateSemanticPatchRequest(
+        buildStartResearch("c1", "web_search", { searchMaxResults: 5.7 }),
+      );
+      const inputs = (out.event as { inputs: { searchMaxResults: number } }).inputs;
+      expect(inputs.searchMaxResults).toBe(5);
+    });
+
+    test("rejects zero searchMaxResults", () => {
+      expectThrows(
+        () =>
+          validateSemanticPatchRequest(
+            buildStartResearch("c1", "web_search", { searchMaxResults: 0 }),
+          ),
+        /finite positive/,
+      );
+    });
+
+    test("accepts searchQuery", () => {
+      const out = validateSemanticPatchRequest(
+        buildStartResearch("c1", "web_search", { searchQuery: "saas churn" }),
+      );
+      const inputs = (out.event as { inputs: { searchQuery: string } }).inputs;
+      expect(inputs.searchQuery).toBe("saas churn");
+    });
+
+    test("rejects non-string searchQuery", () => {
+      expectThrows(
+        () =>
+          validateSemanticPatchRequest(
+            buildStartResearch("c1", "web_search", { searchQuery: 5 }),
+          ),
+        /searchQuery must be a string/,
+      );
+    });
+
+    test("rejects overly long searchQuery", () => {
+      expectThrows(
+        () =>
+          validateSemanticPatchRequest(
+            buildStartResearch("c1", "web_search", {
+              searchQuery: "x".repeat(1001),
+            }),
+          ),
+        /too long/,
+      );
+    });
+  });
+});

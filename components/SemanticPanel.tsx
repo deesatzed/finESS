@@ -26,6 +26,7 @@ import type {
 import type {
   SemanticEvent,
   SemanticState,
+  StartResearchInputs,
 } from "@/lib/semantic/state-machine";
 import type {
   ComponentPatch,
@@ -165,10 +166,24 @@ export function SemanticPanel({
   const handleAcceptComponents = () => dispatch({ type: "acceptComponents" });
   const handleSetThreshold = (threshold: number, thresholdLabel: string) =>
     dispatch({ type: "setThreshold", threshold, thresholdLabel });
+  /**
+   * B6: ResearchStep may attach mechanism-specific inputs (CSV, expert
+   * estimates) when the user picks ensemble_forecast / empirical /
+   * expert_panel. The dispatcher forwards them on the wire; the
+   * reducer ignores them; the server-side auto-advance reads them.
+   * Mechanisms that need no inputs pass `inputs` undefined and the
+   * server takes the no-input path.
+   */
   const handleStartResearch = (
     componentId: string,
     mechanism: ResearchMechanism,
-  ) => dispatch({ type: "startResearch", componentId, mechanism });
+    inputs?: StartResearchInputs,
+  ) =>
+    dispatch(
+      inputs && Object.keys(inputs).length > 0
+        ? { type: "startResearch", componentId, mechanism, inputs }
+        : { type: "startResearch", componentId, mechanism },
+    );
   const handleAcceptResearch = (componentId: string) =>
     dispatch({ type: "acceptResearch", componentId });
   const handleRunModel = () => dispatch({ type: "runModel" });
@@ -298,18 +313,11 @@ export function SemanticPanel({
                         kind: "REVIEWING_RESULT" | "COMPLETE";
                       },
                     )
-                  : (
-                      <div className="rounded border border-[#1e293b] bg-[#0f1629] p-6 text-center text-xs text-[#64748b]">
-                        Cockpit slot not wired in this view. The full
-                        6-panel Dashboard renders here in production.
-                      </div>
-                    )
+                  : null
               }
               onVerifyNext={handleVerifyNext}
               onAccept={handleAcceptResult}
-              onBack={
-                state.kind === "REVIEWING_RESULT" ? handleBack : undefined
-              }
+              onBack={handleBack}
               onReset={handleReset}
             />
           </div>
@@ -354,6 +362,7 @@ interface RenderStepArgs {
   handleStartResearch: (
     componentId: string,
     mechanism: ResearchMechanism,
+    inputs?: StartResearchInputs,
   ) => Promise<void>;
   handleAcceptResearch: (componentId: string) => Promise<void>;
   handleRunModel: () => Promise<void>;
@@ -365,16 +374,10 @@ function renderStep(args: RenderStepArgs): React.ReactNode {
   const { state, isBusy } = args;
   switch (state.kind) {
     case "IDLE":
-      return (
-        <p className="text-xs text-[#94a3b8]">
-          Returning to the start screen...
-        </p>
-      );
     case "CLARIFYING":
       return (
         <div className="rounded-md border border-[#1e293b] bg-[#0f1629] p-4 text-xs text-[#94a3b8]">
-          Thinking about what to ask first... clarifying questions will
-          appear here.
+          Thinking through what to ask you first...
         </div>
       );
     case "AWAITING_ANSWERS":

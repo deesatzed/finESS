@@ -26,7 +26,11 @@
 import type {
   PersistedSemanticConversation,
 } from "@/lib/semantic/persistence";
-import type { SemanticEvent } from "@/lib/semantic/state-machine";
+import type {
+  SemanticEvent,
+  StartResearchInputs,
+} from "@/lib/semantic/state-machine";
+import type { ResearchMechanism } from "@/lib/semantic/types";
 
 // ---------------------------------------------------------------------------
 // Errors
@@ -225,6 +229,28 @@ export async function dispatchEvent(
       body: JSON.stringify({ event }),
     },
   );
+}
+
+/**
+ * B6 helper: dispatch a `startResearch` event with typed mechanism +
+ * optional mechanism-specific inputs (CSV rows, expert estimates,
+ * search query, etc.). Thin wrapper over `dispatchEvent` that exists so
+ * call sites (the ResearchStep UI) get explicit typing of `inputs` per
+ * `StartResearchInputs`. The server fires the appropriate adapter
+ * immediately and applies `researchReceived` (or `fail`) before
+ * returning the updated conversation.
+ */
+export async function startResearch(
+  id: string,
+  componentId: string,
+  mechanism: ResearchMechanism,
+  inputs?: StartResearchInputs,
+): Promise<PersistedSemanticConversation> {
+  const event: SemanticEvent =
+    inputs && Object.keys(inputs).length > 0
+      ? { type: "startResearch", componentId, mechanism, inputs }
+      : { type: "startResearch", componentId, mechanism };
+  return dispatchEvent(id, event);
 }
 
 /**

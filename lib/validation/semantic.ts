@@ -19,12 +19,23 @@
  * fields are NOT silently allowed — anything outside the per-type
  * allowlist is rejected so the audit trail can't be polluted with
  * unintended payload.
+ *
+ * B6: `startResearch` accepts an OPTIONAL `inputs` object carrying
+ * mechanism-specific arguments (CSV rows for forecast/empirical,
+ * estimates for expert_panel, etc.). The validator type-checks the
+ * known optional keys but does NOT require any of them — required-field
+ * enforcement happens in `lib/semantic/auto-advance.ts` per mechanism
+ * so a missing input fails research via the `fail` event rather than
+ * 400-ing the PATCH. When `inputs` is absent the validated event omits
+ * it entirely (so existing tests that deep-equal the minimal event
+ * shape stay green).
  */
 
 import { ValidationError } from "@/lib/validation/schemas";
 import type {
   SemanticEvent,
   SemanticEventType,
+  StartResearchInputs,
 } from "@/lib/semantic/state-machine";
 
 // Re-export the same MAX_QUERY_LENGTH as the rest of the codebase. We
@@ -70,6 +81,13 @@ const VALID_EVENT_TYPES = new Set<SemanticEventType>([
   "back",
   "reset",
 ]);
+
+// B6: hard caps so a malicious or accidental payload cannot blow up the
+// PATCH body. The full request body limit is enforced by Next.js; these
+// are per-field guards so a 4MB CSV does not waste an LLM call.
+const MAX_CSV_ROWS = 10_000;
+const MAX_ESTIMATES = 100;
+const MAX_DOCUMENT_IDS = 200;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -495,14 +513,17 @@ function validateSetThresholdEvent(
 function validateStartResearchEvent(
   event: Record<string, unknown>,
 ): SemanticEvent {
-  assertNoExtraFields(event, ["type", "componentId", "mechanism"]);
+  // B6: `inputs` is added as an allowed top-level field. The validator
+  // type-checks the known optional keys and rejects unknown ones to keep
+  // the audit trail clean.
+  assertNoExtraFields(event, ["type", "componentId", "mechanism", "inputs"]);
   const componentId = requireNonEmptyString(event, "componentId");
   if (typeof event.mechanism !== "string" || !VALID_RESEARCH_MECHANISMS.has(event.mechanism)) {
     throw new ValidationError(
       `event.mechanism "${String(event.mechanism)}" is not a recognized research mechanism`,
     );
   }
-  return {
+  const result: SemanticEvent & { type: "startResearch" } = {
     type: "startResearch",
     componentId,
     mechanism: event.mechanism as
@@ -514,6 +535,252 @@ function validateStartResearchEvent(
       | "empirical_observation"
       | "expert_panel",
   };
+  if (event.inputs !== undefined) {
+    result.inputs = validateStartResearchInputs(event.inputs);
+  }
+  return result;
+}
+
+/**
+ * B6: validate the optional `inputs` payload on a `startResearch` event.
+ * Every field is optional; required-ness per mechanism is enforced in
+ * `lib/semantic/auto-advance.ts` so a missing input fails research via
+ * the `fail` event rather than 400-ing the PATCH. Returns the cleaned
+ * inputs object with only the recognized keys present.
+ */
+function validateStartResearchInputs(value: unknown): StartResearchInputs {
+  const raw = requireRecord(value, "event.inputs");
+  const allowedKeys = new Set([
+    "csvRows",
+    "dateColumn",
+    "targetColumn",
+    "horizon",
+    "threshold",
+    "estimates",
+    "labels",
+    "hardBounds",
+    "distribution",
+    "documentIds",
+    "searchMaxResults",
+    "searchQuery",
+  ]);
+  for (const key of Object.keys(raw)) {
+    if (!allowedKeys.has(key)) {
+      throw new ValidationError(
+        `event.inputs has unexpected field "${key}" for type "startResearch"`,
+      );
+    }
+  }
+
+  const out: StartResearchInputs = {};
+
+  if (raw.csvRows !== undefined) {
+    if (!Array.isArray(raw.csvRows)) {
+      throw new ValidationError("event.inputs.csvRows must be an array");
+    }
+    if (raw.csvRows.length > MAX_CSV_ROWS) {
+      throw new ValidationError(
+        `event.inputs.csvRows exceeds ${MAX_CSV_ROWS} rows`,
+      );
+    }
+    const rows: Array<Record<string, string | number>> = [];
+    for (let i = 0; i < raw.csvRows.length; i++) {
+      const row = raw.csvRows[i];
+      if (!isRecord(row)) {
+        throw new ValidationError(
+          `event.inputs.csvRows[${i}] must be an object`,
+        );
+      }
+      const cleaned: Record<string, string | number> = {};
+      for (const [col, cell] of Object.entries(row)) {
+        if (typeof cell === "string" || typeof cell === "number") {
+          cleaned[col] = cell;
+        } else if (cell === null || cell === undefined) {
+          cleaned[col] = "";
+        } else {
+          throw new ValidationError(
+            `event.inputs.csvRows[${i}].${col} must be a string, number, or null`,
+          );
+        }
+      }
+      rows.push(cleaned);
+    }
+    out.csvRows = rows;
+  }
+
+  if (raw.dateColumn !== undefined) {
+    if (typeof raw.dateColumn !== "string" || raw.dateColumn.trim() === "") {
+      throw new ValidationError(
+        "event.inputs.dateColumn must be a non-empty string",
+      );
+    }
+    out.dateColumn = raw.dateColumn;
+  }
+
+  if (raw.targetColumn !== undefined) {
+    if (typeof raw.targetColumn !== "string" || raw.targetColumn.trim() === "") {
+      throw new ValidationError(
+        "event.inputs.targetColumn must be a non-empty string",
+      );
+    }
+    out.targetColumn = raw.targetColumn;
+  }
+
+  if (raw.horizon !== undefined) {
+    if (typeof raw.horizon !== "number" || !Number.isFinite(raw.horizon)) {
+      throw new ValidationError(
+        "event.inputs.horizon must be a finite number",
+      );
+    }
+    out.horizon = raw.horizon;
+  }
+
+  if (raw.threshold !== undefined) {
+    if (raw.threshold === null) {
+      out.threshold = null;
+    } else if (
+      typeof raw.threshold !== "number" ||
+      !Number.isFinite(raw.threshold)
+    ) {
+      throw new ValidationError(
+        "event.inputs.threshold must be a finite number or null",
+      );
+    } else {
+      out.threshold = raw.threshold;
+    }
+  }
+
+  if (raw.estimates !== undefined) {
+    if (!Array.isArray(raw.estimates)) {
+      throw new ValidationError("event.inputs.estimates must be an array");
+    }
+    if (raw.estimates.length > MAX_ESTIMATES) {
+      throw new ValidationError(
+        `event.inputs.estimates exceeds ${MAX_ESTIMATES} entries`,
+      );
+    }
+    const estimates: number[] = [];
+    for (let i = 0; i < raw.estimates.length; i++) {
+      const v = raw.estimates[i];
+      if (typeof v !== "number" || !Number.isFinite(v)) {
+        throw new ValidationError(
+          `event.inputs.estimates[${i}] must be a finite number`,
+        );
+      }
+      estimates.push(v);
+    }
+    out.estimates = estimates;
+  }
+
+  if (raw.labels !== undefined) {
+    if (!Array.isArray(raw.labels)) {
+      throw new ValidationError("event.inputs.labels must be an array");
+    }
+    const labels: string[] = [];
+    for (let i = 0; i < raw.labels.length; i++) {
+      const v = raw.labels[i];
+      if (typeof v !== "string") {
+        throw new ValidationError(
+          `event.inputs.labels[${i}] must be a string`,
+        );
+      }
+      labels.push(v);
+    }
+    out.labels = labels;
+  }
+
+  if (raw.hardBounds !== undefined) {
+    if (!isRecord(raw.hardBounds)) {
+      throw new ValidationError("event.inputs.hardBounds must be an object");
+    }
+    const hb = raw.hardBounds;
+    if (
+      typeof hb.min !== "number" ||
+      !Number.isFinite(hb.min) ||
+      typeof hb.max !== "number" ||
+      !Number.isFinite(hb.max)
+    ) {
+      throw new ValidationError(
+        "event.inputs.hardBounds.min and .max must be finite numbers",
+      );
+    }
+    if (!(hb.min < hb.max)) {
+      throw new ValidationError(
+        "event.inputs.hardBounds requires min < max",
+      );
+    }
+    out.hardBounds = { min: hb.min, max: hb.max };
+  }
+
+  if (raw.distribution !== undefined) {
+    if (
+      typeof raw.distribution !== "string" ||
+      !VALID_DISTRIBUTIONS.has(raw.distribution)
+    ) {
+      throw new ValidationError(
+        `event.inputs.distribution "${String(raw.distribution)}" is not a supported distribution`,
+      );
+    }
+    out.distribution = raw.distribution as
+      | "normal"
+      | "beta"
+      | "uniform"
+      | "lognormal"
+      | "triangular";
+  }
+
+  if (raw.documentIds !== undefined) {
+    if (!Array.isArray(raw.documentIds)) {
+      throw new ValidationError(
+        "event.inputs.documentIds must be an array",
+      );
+    }
+    if (raw.documentIds.length > MAX_DOCUMENT_IDS) {
+      throw new ValidationError(
+        `event.inputs.documentIds exceeds ${MAX_DOCUMENT_IDS} entries`,
+      );
+    }
+    const ids: string[] = [];
+    for (let i = 0; i < raw.documentIds.length; i++) {
+      const v = raw.documentIds[i];
+      if (typeof v !== "string" || v.trim() === "") {
+        throw new ValidationError(
+          `event.inputs.documentIds[${i}] must be a non-empty string`,
+        );
+      }
+      ids.push(v);
+    }
+    out.documentIds = ids;
+  }
+
+  if (raw.searchMaxResults !== undefined) {
+    if (
+      typeof raw.searchMaxResults !== "number" ||
+      !Number.isFinite(raw.searchMaxResults) ||
+      raw.searchMaxResults < 1
+    ) {
+      throw new ValidationError(
+        "event.inputs.searchMaxResults must be a finite positive number",
+      );
+    }
+    out.searchMaxResults = Math.floor(raw.searchMaxResults);
+  }
+
+  if (raw.searchQuery !== undefined) {
+    if (typeof raw.searchQuery !== "string") {
+      throw new ValidationError(
+        "event.inputs.searchQuery must be a string",
+      );
+    }
+    if (raw.searchQuery.length > 1000) {
+      throw new ValidationError(
+        "event.inputs.searchQuery is too long (max 1000 chars)",
+      );
+    }
+    out.searchQuery = raw.searchQuery;
+  }
+
+  return out;
 }
 
 function validateResearchReceivedEvent(

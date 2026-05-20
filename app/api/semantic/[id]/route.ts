@@ -11,6 +11,7 @@ import {
 } from "@/lib/semantic/persistence";
 import { reduce, SemanticStateError } from "@/lib/semantic/state-machine";
 import { autoAdvance } from "@/lib/semantic/auto-advance";
+import { getConfiguredModels } from "@/lib/ai/model-config";
 
 /**
  * GET /api/semantic/[id] — load one semantic conversation by id.
@@ -105,8 +106,8 @@ export async function GET(
  *    deterministic client bug, not auth.
  *
  * Audit emits the event type and the from/to state kinds — NEVER the
- * event payload, which could carry user query free-text or LLM
- * response bodies.
+ * event payload, which could carry user query free-text, LLM response
+ * bodies, raw CSV rows, or per-mechanism inputs.
  */
 export async function PATCH(
   request: NextRequest,
@@ -188,10 +189,12 @@ export async function PATCH(
       throw err;
     }
 
-    // Auto-advance: if the new state requires an LLM call (CLARIFYING or
-    // PROPOSING_COMPONENTS), fire the adapter and apply its result-event
-    // before responding. The reducer itself never makes I/O — auto-advance
-    // is the only place an LLM call happens inside the PATCH handler.
+    // Auto-advance: if the new state requires an LLM call (CLARIFYING,
+    // PROPOSING_COMPONENTS) or the user just dispatched a fresh
+    // `startResearch` event (B6 server-side dispatch), fire the
+    // appropriate adapter and apply its result-event before responding.
+    // The reducer itself never makes I/O — auto-advance is the only
+    // place an adapter call happens inside the PATCH handler.
     const apiKey =
       eventBody.apiKey ?? process.env.OPENROUTER_API_KEY;
     const model =
@@ -205,11 +208,45 @@ export async function PATCH(
       failed: boolean;
       costUsd?: number;
       latencyMs?: number;
+      mechanism?: string;
+      componentId?: string;
     }> = [];
+
+    // B6: resolve env-driven adapter inputs. Tavily key feeds web_search;
+    // workspaceId feeds RAG; configured models feed consensus.
+    const tavilyApiKey = process.env.TAVILY_API_KEY?.trim() || undefined;
+    const configured = getConfiguredModels(process.env);
+    const consensusModels = configured.models.map((m) => m.id);
+
     if (apiKey) {
-      const result = await autoAdvance(nextState, { model, apiKey });
+      const result = await autoAdvance(nextState, {
+        model,
+        apiKey,
+        tavilyApiKey,
+        workspaceId: auth.workspaceId,
+        consensusModels,
+        triggerEvent: eventBody.event,
+      });
       nextState = result.state;
       autoAdvanceSteps = result.steps;
+    } else if (eventBody.event.type === "startResearch") {
+      // B6: without an API key we cannot dispatch any research mechanism
+      // (every mechanism either calls the LLM or — for expert_panel —
+      // still benefits from being on the same code path). The reducer
+      // has already moved us into RESEARCHING with this component in
+      // in-flight; we hard-fail explicitly so the user sees the missing
+      // configuration rather than a silent stall.
+      // Expert panel is the one synchronous mechanism, so we still let
+      // it run when the user supplied inputs even without OPENROUTER_API_KEY.
+      if (eventBody.event.mechanism === "expert_panel") {
+        const result = await autoAdvance(nextState, {
+          model: "n/a",
+          apiKey: "n/a",
+          triggerEvent: eventBody.event,
+        });
+        nextState = result.state;
+        autoAdvanceSteps = result.steps;
+      }
     }
 
     const updated = await prisma.semanticConversation.update({
@@ -220,6 +257,19 @@ export async function PATCH(
       },
     });
 
+    // Audit metadata: NEVER the inputs payload (could contain CSV rows
+    // or expert estimates the user pasted). Only the event type, the
+    // from/to states, and the auto-advance summary (count + cost +
+    // optionally the mechanism + componentId for research dispatches).
+    const safeSteps = autoAdvanceSteps.map((s) => ({
+      eventType: s.eventType,
+      fromState: s.fromState,
+      toState: s.toState,
+      failed: s.failed,
+      costUsd: s.costUsd,
+      mechanism: s.mechanism,
+      componentId: s.componentId,
+    }));
     await recordAuditEvent({
       type: "semantic.event_applied",
       auth,
@@ -235,6 +285,7 @@ export async function PATCH(
           (sum, s) => sum + (s.costUsd ?? 0),
           0,
         ),
+        researchSteps: safeSteps.filter((s) => s.mechanism !== undefined),
       },
     });
 
