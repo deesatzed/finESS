@@ -64,3 +64,20 @@ services/**/.pytest_cache/
 # (default weather_config['cache_dir']). Real weather data fetched on
 # demand; should not be checked in.
 /data/weather/
+
+# B3 RAG local vector store. LanceDB writes per-workspace Arrow/Lance
+# files under data/lancedb/<workspaceId>. These contain user-uploaded
+# document embeddings and chunk text; they are local-only and never
+# checked in. The directory is recreated on first upload.
+/data/lancedb/
+
+# B3 RAG document uploads (raw bytes kept temporarily during chunking).
+# Documents themselves are not persisted as files — only the SemanticDocument
+# row (metadata) and the LanceDB chunks survive past the request. This
+# directory is for transient buffering only.
+/data/documents/
+
+# B3 transformers.js model cache. The BAAI/bge-small-en-v1.5 model
+# downloads on first embedding call (~130 MB) and is cached locally
+# under data/.cache/transformers — local-only, never committed.
+/data/.cache/

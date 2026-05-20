@@ -17,9 +17,12 @@
     "smoke:multi-proposer": "node scripts/multi-proposer-live-check.mjs"
   },
   "dependencies": {
+    "@lancedb/lancedb": "^0.29.0",
     "@prisma/client": "^6.19.3",
+    "@xenova/transformers": "^2.17.2",
     "dotenv": "^17.4.2",
     "next": "14.2.35",
+    "pdf-parse": "^2.4.5",
     "prisma": "^6.19.3",
     "react": "^18",
     "react-dom": "^18"
