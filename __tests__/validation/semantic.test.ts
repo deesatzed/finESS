@@ -756,6 +756,226 @@ describe("validateSemanticPatchRequest — researchReceived event", () => {
       /reasoning must be a string/,
     );
   });
+
+  test("accepts bundle without citations (legacy / minimal)", () => {
+    const out = validateSemanticPatchRequest({
+      event: { type: "researchReceived", componentId: "c1", bundle: goodBundle },
+    });
+    const validatedBundle = (
+      out.event as { bundle: { citations?: unknown[] } }
+    ).bundle;
+    expect(validatedBundle.citations).toBeUndefined();
+  });
+
+  test("preserves llm_prior citations shape ({source} only)", () => {
+    const out = validateSemanticPatchRequest({
+      event: {
+        type: "researchReceived",
+        componentId: "c1",
+        bundle: {
+          ...goodBundle,
+          citations: [{ source: "Wells score 2019 meta-analysis" }],
+        },
+      },
+    });
+    const bundle = (out.event as { bundle: { citations: unknown[] } }).bundle;
+    expect(bundle.citations).toEqual([
+      { source: "Wells score 2019 meta-analysis" },
+    ]);
+  });
+
+  test("preserves web_search citations shape ({url, title, snippet})", () => {
+    const out = validateSemanticPatchRequest({
+      event: {
+        type: "researchReceived",
+        componentId: "c1",
+        bundle: {
+          ...goodBundle,
+          citations: [
+            {
+              url: "https://example.com/study",
+              title: "B2B SaaS growth rates",
+              snippet: "Median annual growth ranges 25-45%.",
+            },
+          ],
+        },
+      },
+    });
+    const bundle = (out.event as { bundle: { citations: unknown[] } }).bundle;
+    expect(bundle.citations).toEqual([
+      {
+        url: "https://example.com/study",
+        title: "B2B SaaS growth rates",
+        snippet: "Median annual growth ranges 25-45%.",
+      },
+    ]);
+  });
+
+  test("preserves rag_document citations shape ({documentId, chunkId, chunkText, sourceFilename})", () => {
+    const out = validateSemanticPatchRequest({
+      event: {
+        type: "researchReceived",
+        componentId: "c1",
+        bundle: {
+          ...goodBundle,
+          citations: [
+            {
+              documentId: "doc_123",
+              chunkId: 7,
+              chunkText: "Benchmark median is 0.18 in cohort B.",
+              sourceFilename: "saas-benchmarks-2025.md",
+            },
+          ],
+        },
+      },
+    });
+    const bundle = (out.event as { bundle: { citations: unknown[] } }).bundle;
+    expect(bundle.citations).toEqual([
+      {
+        documentId: "doc_123",
+        chunkId: 7,
+        chunkText: "Benchmark median is 0.18 in cohort B.",
+        sourceFilename: "saas-benchmarks-2025.md",
+      },
+    ]);
+  });
+
+  test("accepts chunkId as string", () => {
+    const out = validateSemanticPatchRequest({
+      event: {
+        type: "researchReceived",
+        componentId: "c1",
+        bundle: {
+          ...goodBundle,
+          citations: [
+            {
+              documentId: "doc_x",
+              chunkId: "uuid-abc",
+              chunkText: "...",
+              sourceFilename: "x.pdf",
+            },
+          ],
+        },
+      },
+    });
+    const bundle = (out.event as { bundle: { citations: unknown[] } }).bundle;
+    expect((bundle.citations as Array<{ chunkId: unknown }>)[0].chunkId).toBe(
+      "uuid-abc",
+    );
+  });
+
+  test("rejects non-array citations", () => {
+    expectThrows(
+      () =>
+        validateSemanticPatchRequest({
+          event: {
+            type: "researchReceived",
+            componentId: "c1",
+            bundle: { ...goodBundle, citations: "not-an-array" },
+          },
+        }),
+      /must be an array/,
+    );
+  });
+
+  test("rejects citation entry that is not an object", () => {
+    expectThrows(
+      () =>
+        validateSemanticPatchRequest({
+          event: {
+            type: "researchReceived",
+            componentId: "c1",
+            bundle: { ...goodBundle, citations: ["just a string"] },
+          },
+        }),
+      /citations\[0\] must be an object/,
+    );
+  });
+
+  test("rejects citation entry with no identifying field (no source / url / documentId)", () => {
+    expectThrows(
+      () =>
+        validateSemanticPatchRequest({
+          event: {
+            type: "researchReceived",
+            componentId: "c1",
+            bundle: {
+              ...goodBundle,
+              citations: [{ snippet: "orphan snippet with no source" }],
+            },
+          },
+        }),
+      /at least one of 'source', 'url', or 'documentId'/,
+    );
+  });
+
+  test("rejects citation with wrong-type field (e.g. numeric title alongside valid source)", () => {
+    // Provide a valid `source` so the identifier check passes; then the
+    // per-field type check fires on the numeric `title`.
+    expectThrows(
+      () =>
+        validateSemanticPatchRequest({
+          event: {
+            type: "researchReceived",
+            componentId: "c1",
+            bundle: {
+              ...goodBundle,
+              citations: [{ source: "x", title: 123 }],
+            },
+          },
+        }),
+      /title must be a string/,
+    );
+  });
+
+  test("rejects citation with chunkId that's neither string nor number", () => {
+    expectThrows(
+      () =>
+        validateSemanticPatchRequest({
+          event: {
+            type: "researchReceived",
+            componentId: "c1",
+            bundle: {
+              ...goodBundle,
+              citations: [
+                {
+                  documentId: "doc_x",
+                  chunkId: { invalid: true },
+                  chunkText: "x",
+                  sourceFilename: "x.md",
+                },
+              ],
+            },
+          },
+        }),
+      /chunkId must be a string or number/,
+    );
+  });
+
+  test("preserves unknown extra fields verbatim (open shape)", () => {
+    const out = validateSemanticPatchRequest({
+      event: {
+        type: "researchReceived",
+        componentId: "c1",
+        bundle: {
+          ...goodBundle,
+          citations: [
+            {
+              source: "model:gpt-x",
+              snippet: "reasoning text",
+              modelLatencyMs: 1234, // unknown but harmless
+            },
+          ],
+        },
+      },
+    });
+    const bundle = (out.event as { bundle: { citations: unknown[] } }).bundle;
+    expect((bundle.citations as Array<Record<string, unknown>>)[0]).toEqual({
+      source: "model:gpt-x",
+      snippet: "reasoning text",
+      modelLatencyMs: 1234,
+    });
+  });
 });
 
 describe("validateSemanticPatchRequest — acceptResearch event", () => {

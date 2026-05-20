@@ -546,6 +546,66 @@ function validateResearchReceivedEvent(
   if (typeof bundle.reasoning !== "string") {
     throw new ValidationError("event.bundle.reasoning must be a string");
   }
+
+  // Phase B: optional citations array. Open shape — see ResearchCitation
+  // in lib/semantic/types.ts for per-mechanism conventions. The validator
+  // enforces only that each entry is an object with at least one
+  // identifying field, and that any present typed field has the right
+  // type. Unknown keys pass through verbatim.
+  let validatedCitations:
+    | Array<Record<string, unknown>>
+    | undefined;
+  if (bundle.citations !== undefined) {
+    if (!Array.isArray(bundle.citations)) {
+      throw new ValidationError(
+        "event.bundle.citations must be an array when present",
+      );
+    }
+    validatedCitations = bundle.citations.map((raw, i) => {
+      if (!isRecord(raw)) {
+        throw new ValidationError(
+          `event.bundle.citations[${i}] must be an object`,
+        );
+      }
+      const hasIdent =
+        typeof raw.source === "string" ||
+        typeof raw.url === "string" ||
+        typeof raw.documentId === "string";
+      if (!hasIdent) {
+        throw new ValidationError(
+          `event.bundle.citations[${i}] must carry at least one of 'source', 'url', or 'documentId'`,
+        );
+      }
+      // Per-field type checks. All optional; only checked when present.
+      const stringFields = [
+        "source",
+        "url",
+        "title",
+        "snippet",
+        "documentId",
+        "chunkText",
+        "sourceFilename",
+      ] as const;
+      for (const f of stringFields) {
+        if (raw[f] !== undefined && typeof raw[f] !== "string") {
+          throw new ValidationError(
+            `event.bundle.citations[${i}].${f} must be a string when present`,
+          );
+        }
+      }
+      if (
+        raw.chunkId !== undefined &&
+        typeof raw.chunkId !== "string" &&
+        typeof raw.chunkId !== "number"
+      ) {
+        throw new ValidationError(
+          `event.bundle.citations[${i}].chunkId must be a string or number when present`,
+        );
+      }
+      return raw;
+    });
+  }
+
   return {
     type: "researchReceived",
     componentId,
@@ -567,6 +627,9 @@ function validateResearchReceivedEvent(
         | "triangular",
       proposedParams: bundle.proposedParams as Record<string, number>,
       reasoning: bundle.reasoning,
+      ...(validatedCitations !== undefined
+        ? { citations: validatedCitations as never }
+        : {}),
     },
   };
 }

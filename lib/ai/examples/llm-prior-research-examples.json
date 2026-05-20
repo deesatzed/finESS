@@ -1,0 +1,40 @@
+{
+  "_comment": "Worked examples embedded in the Semantic Mode B1 (llm-prior research) system prompt. Per the v2 plan addendum's mandatory few-shot rule, removing the worked example empirically regressed analogous LLM steps to flat / generic output. These examples teach the LLM the exact response shape for a single-component research pass: pick (or confirm) a distribution, propose the correct parameter shape for that distribution, write 2-3 sentences of WHY, and cite any general-knowledge sources by NAME (no URLs at this stage — Phase B2 web search is the path for URL citations). The two examples cover (a) a beta distribution where the LLM confirms the suggested distribution, and (b) a triangular distribution where the LLM confirms a min/mode/max shape. The examples are static reference data inlined verbatim into the system prompt by lib/semantic/research/llm-prior.ts; they are never consumed as live LLM output.",
+  "examples": [
+    {
+      "component": {
+        "id": "waitlist_conversion",
+        "name": "Waitlist conversion rate",
+        "description": "Share of pre-launch waitlist members who actually sign up after launch.",
+        "suggestedDistribution": "beta",
+        "why": "Bounded in [0,1] and historically variable across B2B SaaS launches."
+      },
+      "response": {
+        "distribution": "beta",
+        "params": { "alpha": 6, "beta": 12 },
+        "reasoning": "B2B SaaS waitlist-to-active-user conversion typically lands in the 20-50% range with substantial company-to-company variation. Beta(6, 12) places the mean near 33% with a 90% interval spanning roughly 17%-52%, which matches the observed spread reported in product-launch retrospectives. The distribution is naturally bounded in [0,1], which matches a conversion rate.",
+        "citationNames": [
+          "Product Hunt launch retrospectives (aggregate observation)",
+          "OpenView Partners SaaS Benchmarks (general knowledge)"
+        ]
+      }
+    },
+    {
+      "component": {
+        "id": "launch_traffic_lift",
+        "name": "Launch traffic lift multiplier",
+        "description": "Multiplier on baseline traffic from launch announcements and PR.",
+        "suggestedDistribution": "triangular",
+        "why": "Bounded planning estimate with a most-likely value and clear worst/best cases."
+      },
+      "response": {
+        "distribution": "triangular",
+        "params": { "min": 1.0, "mode": 2.0, "max": 5.0 },
+        "reasoning": "A launch with no press coverage produces no lift (min = 1.0x). The most-likely outcome based on comparable B2B SaaS launches is roughly a 2x lift in the launch week (mode = 2.0). A best-case outcome with viral PR coverage can reach 5x (max = 5.0); going higher is implausible without a major editorial pickup. Triangular is the correct family because the user has a defensible best / likely / worst estimate but no parametric prior.",
+        "citationNames": [
+          "First Round Review launch case studies (general knowledge)"
+        ]
+      }
+    }
+  ]
+}

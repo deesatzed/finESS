@@ -1,0 +1,46 @@
+{
+  "_comment": "Worked example for the Semantic Mode web-research extractor (B2). After Tavily returns N snippets the orchestrator (lib/semantic/research/web.ts) asks the LLM to extract a probability distribution + parameters + reasoning + per-claim citations. This worked example shows the model exactly how to weave snippet text into citations. The example is static reference content (not product data) and is inlined verbatim into the extractor system prompt; no product code path consumes it as live LLM output.",
+  "examples": [
+    {
+      "domain": "product",
+      "component": {
+        "id": "saas_cac",
+        "name": "B2B SaaS customer acquisition cost",
+        "description": "The blended cost in USD to acquire one paying customer for a typical mid-market B2B SaaS company.",
+        "suggestedDistribution": "lognormal"
+      },
+      "snippets": [
+        {
+          "title": "2024 SaaS CAC benchmark report",
+          "url": "https://example.com/saas-cac-benchmark-2024",
+          "content": "Across 1,200 B2B SaaS companies the median blended CAC in 2024 was approximately $1,200 with the interquartile range spanning $700 to $2,400; the distribution is right-skewed with a long tail of outliers above $5,000 driven by enterprise-segment deals."
+        },
+        {
+          "title": "Mid-market SaaS economics primer",
+          "url": "https://example.com/mid-market-saas-economics",
+          "content": "Mid-market SaaS CAC typically falls between $800 and $3,000 depending on sales motion (PLG vs sales-led). Right-skew is consistent across cohorts."
+        }
+      ],
+      "response": {
+        "distribution": "lognormal",
+        "params": {
+          "mean": 1500,
+          "sd": 900
+        },
+        "reasoning": "The two snippets agree on a right-skewed distribution centered roughly between $1,200 and $1,500 with substantial spread out to several thousand dollars. Lognormal is the standard choice for positive, right-skewed cost quantities. Mean is anchored on the 2024 benchmark median nudged toward the mid-market primer's range; SD captures the IQR width and the long tail.",
+        "citations": [
+          {
+            "url": "https://example.com/saas-cac-benchmark-2024",
+            "title": "2024 SaaS CAC benchmark report",
+            "snippet": "median blended CAC in 2024 was approximately $1,200 with the interquartile range spanning $700 to $2,400; the distribution is right-skewed"
+          },
+          {
+            "url": "https://example.com/mid-market-saas-economics",
+            "title": "Mid-market SaaS economics primer",
+            "snippet": "Mid-market SaaS CAC typically falls between $800 and $3,000 depending on sales motion"
+          }
+        ]
+      }
+    }
+  ]
+}

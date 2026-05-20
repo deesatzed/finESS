@@ -78,6 +78,53 @@ export interface ProposedParams {
 }
 
 /**
+ * A single piece of supporting evidence behind a `ResearchBundle`.
+ * Phase B (commit batch landing the mechanism modules) standardised on
+ * a single open shape that accommodates every mechanism without forcing
+ * a discriminated union — the alternative was five parallel types and
+ * a validator that had to branch per mechanism. Every field except
+ * `source` is optional; mechanisms populate what they have.
+ *
+ * Per-mechanism conventions (informational; the validator does not
+ * enforce these so future mechanisms can extend freely):
+ *
+ *  - llm_prior:           { source }                       (citation name)
+ *  - web_search:          { url, title?, snippet }         (Tavily snippet + URL)
+ *  - rag_document:        { documentId, chunkId, chunkText, sourceFilename }
+ *  - multi_llm_consensus: { source }  (source = "model:<id>", snippet = per-model reasoning)
+ *  - ensemble_forecast:   { source, snippet }              (source = "ensemble-model:<name>")
+ *  - empirical_observation: { source, snippet }            (source = "csv:<column>")
+ *  - expert_panel:        { source, snippet }              (source = label or "expert-N")
+ *
+ * The validator enforces:
+ *  - citations is an array (when present at all)
+ *  - every entry is an object
+ *  - every entry has at least one of `source`, `url`, or `documentId`
+ *    (else the citation carries no identifying information)
+ *  - any present field is the right type
+ *
+ * Unknown extra fields are preserved verbatim (open shape).
+ */
+export interface ResearchCitation {
+  /** Generic citation source identifier — typically used by llm_prior, expert_panel, consensus, forecast, empirical mechanisms. */
+  source?: string;
+  /** Web-search citations: the URL of the supporting page. */
+  url?: string;
+  /** Web-search citations: page title, when the provider returned one. */
+  title?: string;
+  /** Free-text snippet supporting the claim (web search, expert panel, etc.). */
+  snippet?: string;
+  /** RAG citations: the SemanticDocument row id. */
+  documentId?: string;
+  /** RAG citations: the chunk index within the document. */
+  chunkId?: string | number;
+  /** RAG citations: the actual chunk text used in the prompt. */
+  chunkText?: string;
+  /** RAG citations: human-readable source filename for UI display. */
+  sourceFilename?: string;
+}
+
+/**
  * Result of a single research pass on one component. Phase B fills in
  * `citations`, `perModelProposals`, `expertEstimates`, etc. based on
  * `mechanism`.
@@ -88,6 +135,12 @@ export interface ResearchBundle {
   proposedDistribution: SemanticDistribution;
   proposedParams: ProposedParams;
   reasoning: string;
+  /**
+   * Per-mechanism supporting evidence. Optional in the type because
+   * legacy bundles (before Phase B) and the simplest hand-typed bundles
+   * may omit it; mechanisms produced in Phase B always populate it.
+   */
+  citations?: ResearchCitation[];
 }
 
 /**
