@@ -88,6 +88,10 @@ function requireRecord(value: unknown, label: string): Record<string, unknown> {
 
 export interface SemanticCreateRequest {
   query: string;
+  /** Optional OpenRouter model id; falls back to OPENROUTER_DEFAULT_MODEL. */
+  model?: string;
+  /** Optional session-only API key override; falls back to OPENROUTER_API_KEY. */
+  apiKey?: string;
 }
 
 export function validateSemanticCreateRequest(
@@ -106,7 +110,20 @@ export function validateSemanticCreateRequest(
     throw new ValidationError("query is too large");
   }
 
-  return { query };
+  const out: SemanticCreateRequest = { query };
+  if (body.model !== undefined) {
+    if (typeof body.model !== "string" || body.model.trim() === "") {
+      throw new ValidationError("model must be a non-empty string if provided");
+    }
+    out.model = body.model;
+  }
+  if (body.apiKey !== undefined) {
+    if (typeof body.apiKey !== "string" || body.apiKey.trim() === "") {
+      throw new ValidationError("apiKey must be a non-empty string if provided");
+    }
+    out.apiKey = body.apiKey;
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -115,6 +132,10 @@ export function validateSemanticCreateRequest(
 
 export interface SemanticPatchRequest {
   event: SemanticEvent;
+  /** Optional OpenRouter model id used when the event triggers an auto-advance LLM call. */
+  model?: string;
+  /** Optional session-only API key override used for auto-advance LLM calls. */
+  apiKey?: string;
 }
 
 export function validateSemanticPatchRequest(
@@ -135,7 +156,20 @@ export function validateSemanticPatchRequest(
   }
 
   const validated = validateEventByType(event);
-  return { event: validated };
+  const out: SemanticPatchRequest = { event: validated };
+  if (body.model !== undefined) {
+    if (typeof body.model !== "string" || body.model.trim() === "") {
+      throw new ValidationError("model must be a non-empty string if provided");
+    }
+    out.model = body.model;
+  }
+  if (body.apiKey !== undefined) {
+    if (typeof body.apiKey !== "string" || body.apiKey.trim() === "") {
+      throw new ValidationError("apiKey must be a non-empty string if provided");
+    }
+    out.apiKey = body.apiKey;
+  }
+  return out;
 }
 
 function validateEventByType(event: Record<string, unknown>): SemanticEvent {

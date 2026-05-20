@@ -10,6 +10,7 @@ import {
   type PersistedSemanticConversation,
 } from "@/lib/semantic/persistence";
 import { initialState, reduce } from "@/lib/semantic/state-machine";
+import { autoAdvance } from "@/lib/semantic/auto-advance";
 
 /**
  * GET /api/semantic — list the requester's saved semantic conversations.
@@ -83,12 +84,35 @@ export async function POST(request: NextRequest) {
       return apiError("UNAUTHENTICATED", "Authentication required", 401);
     }
 
-    const { query } = validateSemanticCreateRequest(await readJsonBody(request));
+    const { query, model: sessionModel, apiKey: sessionApiKey } =
+      validateSemanticCreateRequest(await readJsonBody(request));
 
     // Advance the state machine to CLARIFYING up-front. The user's first
     // interaction is to receive clarifying questions, so the server-side
     // contract is "creating a conversation = you have already started it".
-    const state = reduce(initialState(), { type: "start", query });
+    let state = reduce(initialState(), { type: "start", query });
+
+    // Resolve LLM credentials. Both fall back to env. If no key is
+    // available we still create the conversation in CLARIFYING and skip
+    // auto-advance so the client can recover via PATCH after the user
+    // configures a key.
+    const apiKey = sessionApiKey ?? process.env.OPENROUTER_API_KEY;
+    const model =
+      sessionModel ?? process.env.OPENROUTER_DEFAULT_MODEL ?? "openrouter/auto";
+
+    let autoAdvanceSteps: Array<{
+      eventType: string;
+      fromState: string;
+      toState: string;
+      failed: boolean;
+      costUsd?: number;
+      latencyMs?: number;
+    }> = [];
+    if (apiKey) {
+      const result = await autoAdvance(state, { model, apiKey });
+      state = result.state;
+      autoAdvanceSteps = result.steps;
+    }
 
     const row = await prisma.semanticConversation.create({
       data: {
@@ -105,7 +129,16 @@ export async function POST(request: NextRequest) {
       auth,
       subjectType: "semantic_conversation",
       subjectId: row.id,
-      metadata: { conversationId: row.id, queryLength: query.length },
+      metadata: {
+        conversationId: row.id,
+        queryLength: query.length,
+        autoAdvanceSteps: autoAdvanceSteps.length,
+        autoAdvanceCostUsd: autoAdvanceSteps.reduce(
+          (sum, s) => sum + (s.costUsd ?? 0),
+          0,
+        ),
+        finalStateKind: state.kind,
+      },
     });
 
     const response: PersistedSemanticConversation = {

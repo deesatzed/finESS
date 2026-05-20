@@ -10,6 +10,7 @@ import {
   type PersistedSemanticConversation,
 } from "@/lib/semantic/persistence";
 import { reduce, SemanticStateError } from "@/lib/semantic/state-machine";
+import { autoAdvance } from "@/lib/semantic/auto-advance";
 
 /**
  * GET /api/semantic/[id] — load one semantic conversation by id.
@@ -187,6 +188,30 @@ export async function PATCH(
       throw err;
     }
 
+    // Auto-advance: if the new state requires an LLM call (CLARIFYING or
+    // PROPOSING_COMPONENTS), fire the adapter and apply its result-event
+    // before responding. The reducer itself never makes I/O — auto-advance
+    // is the only place an LLM call happens inside the PATCH handler.
+    const apiKey =
+      eventBody.apiKey ?? process.env.OPENROUTER_API_KEY;
+    const model =
+      eventBody.model ??
+      process.env.OPENROUTER_DEFAULT_MODEL ??
+      "openrouter/auto";
+    let autoAdvanceSteps: Array<{
+      eventType: string;
+      fromState: string;
+      toState: string;
+      failed: boolean;
+      costUsd?: number;
+      latencyMs?: number;
+    }> = [];
+    if (apiKey) {
+      const result = await autoAdvance(nextState, { model, apiKey });
+      nextState = result.state;
+      autoAdvanceSteps = result.steps;
+    }
+
     const updated = await prisma.semanticConversation.update({
       where: { id: row.id },
       data: {
@@ -205,6 +230,11 @@ export async function PATCH(
         eventType: eventBody.event.type,
         fromState: currentState.kind,
         toState: nextState.kind,
+        autoAdvanceSteps: autoAdvanceSteps.length,
+        autoAdvanceCostUsd: autoAdvanceSteps.reduce(
+          (sum, s) => sum + (s.costUsd ?? 0),
+          0,
+        ),
       },
     });
 
