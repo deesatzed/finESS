@@ -89,22 +89,32 @@ interface XenovaModule {
 }
 
 /**
- * Runtime-resolve `@xenova/transformers` via a path webpack cannot
- * statically analyze. The string concatenation defeats webpack's
- * static-import detection, keeping the heavy ONNX binaries out of the
- * build output. Node's runtime `require` still resolves the module
- * normally from `node_modules`.
+ * Runtime-resolve `@xenova/transformers` via dynamic `import()` rather
+ * than `require()`. The package is ESM-only — Jest's default CommonJS
+ * transform can't load it via `require`, but native `import()` resolves
+ * it correctly in both Next.js's webpack runtime and Jest. The string
+ * concatenation still defeats webpack's static-import detection so the
+ * heavy ONNX binaries stay out of the production bundle.
  *
- * We use `eval('require')` (not bare `require`) so this also works
- * inside Next.js server bundles where `require` may be shimmed.
+ * The Function-wrapper trick (`new Function`) defeats webpack/ts-jest
+ * static analysis even harder than the string concat — webpack tries
+ * to follow dynamic imports it can resolve at build time, but it
+ * cannot follow an import expression constructed via `new Function`.
+ * This keeps the build output small AND lets Jest's runtime resolve
+ * the ESM module normally.
  */
 async function loadXenovaModule(): Promise<XenovaModule> {
   // Build the module specifier at runtime — `["@", "xenova", ...]` is
   // opaque to webpack's parser.
   const pkg = ["@xenova", "transformers"].join("/");
-  // eslint-disable-next-line @typescript-eslint/no-implied-eval, no-eval
-  const dynamicRequire = eval("require") as NodeRequire;
-  return dynamicRequire(pkg) as XenovaModule;
+  // Use `new Function` to construct an import expression webpack and
+  // ts-jest's transformers cannot statically analyze.
+  // eslint-disable-next-line @typescript-eslint/no-implied-eval
+  const dynamicImport = new Function(
+    "specifier",
+    "return import(specifier);",
+  ) as (s: string) => Promise<XenovaModule>;
+  return dynamicImport(pkg);
 }
 
 /**

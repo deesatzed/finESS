@@ -14,7 +14,8 @@
     "test:e2e": "jest --runInBand __tests__/e2e",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
-    "smoke:multi-proposer": "node scripts/multi-proposer-live-check.mjs"
+    "smoke:multi-proposer": "node scripts/multi-proposer-live-check.mjs",
+    "smoke:rag": "node scripts/rag-live-smoke.mjs"
   },
   "dependencies": {
     "@lancedb/lancedb": "^0.29.0",
