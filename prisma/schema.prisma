@@ -93,6 +93,43 @@ model SemanticConversation {
   @@index([userId, stateKind])
 }
 
+/// SemanticDocument is a user-uploaded reference document indexed for the
+/// Phase B3 RAG research mechanism. One row per uploaded file.
+///
+/// Local-only posture: the raw bytes are NEVER persisted — they are
+/// chunked + embedded into the workspace's LanceDB table at upload time
+/// and discarded. Only the metadata (filename, sha256, mimeType, size,
+/// chunkCount) survives, plus the embeddings sitting in
+/// `data/lancedb/<workspaceId>` (gitignored).
+///
+/// Dedup is content-addressed per user: the `(userId, sha256)` uniqueness
+/// constraint prevents the same user from re-embedding the same file
+/// twice. Different users may upload the same content independently
+/// because their workspaces have separate LanceDB tables; the unique
+/// constraint is scoped to the user, not global.
+///
+/// On row delete the corresponding chunks should be evicted from the
+/// LanceDB table by the caller (lib/rag/store.ts removeDocument).
+/// Prisma cannot cascade into LanceDB, so the API DELETE handler is
+/// responsible for sequencing both deletes.
+model SemanticDocument {
+  id          String   @id @default(cuid())
+  userId      String
+  workspaceId String
+  filename    String
+  mimeType    String
+  sha256      String
+  sizeBytes   Int
+  chunkCount  Int
+  createdAt   DateTime @default(now())
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, sha256])
+  @@index([userId, workspaceId, createdAt])
+}
+
 model User {
   id           String   @id @default(cuid())
   localSubject String   @unique
@@ -104,6 +141,7 @@ model User {
   analyses              Analysis[]
   calibrationOutcomes   CalibrationOutcome[]
   semanticConversations SemanticConversation[]
+  semanticDocuments     SemanticDocument[]
 }
 
 model Workspace {
@@ -118,6 +156,7 @@ model Workspace {
   analyses              Analysis[]
   calibrationOutcomes   CalibrationOutcome[]
   semanticConversations SemanticConversation[]
+  semanticDocuments     SemanticDocument[]
 
   @@index([userId])
 }
