@@ -49,11 +49,13 @@ Design notes
 
 from __future__ import annotations
 
+import json
 import logging
 import math
 import os
 import threading
 import time
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import numpy as np
@@ -98,6 +100,128 @@ logger = logging.getLogger("ensemble.sidecar")
 # the learner override the trained weights wholesale. Tuning this knob
 # requires re-running the calibration_loop integration test.
 PRIOR_BLEND: float = 0.3
+
+# Path for durable EMA snapshot. Defaults to /data/ema_snapshot.json which is
+# a Docker volume mount in production. Override via ENSEMBLE_SNAPSHOT_PATH.
+# Setting this to "" disables persistence (useful in unit tests).
+ENSEMBLE_SNAPSHOT_PATH: str = os.environ.get(
+    "ENSEMBLE_SNAPSHOT_PATH", "/data/ema_snapshot.json"
+)
+
+
+# ---------------------------------------------------------------------------
+# EMA snapshot helpers
+# ---------------------------------------------------------------------------
+
+
+def _save_ema_snapshot() -> None:
+    """Atomically write the EMA state + observation counts to ENSEMBLE_SNAPSHOT_PATH.
+
+    Writes to a sibling .tmp file first, then renames — so a crash during
+    the write never leaves a corrupt snapshot. No-op when the path is empty
+    (persistence disabled) or when the EMA learner has not been initialised.
+    """
+    path_str = ENSEMBLE_SNAPSHOT_PATH
+    if not path_str or registry.ema is None:
+        return
+    path = Path(path_str)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        snapshot: Dict[str, Any] = {
+            "schema_version": 1,
+            "saved_at": time.time(),
+            "alpha": registry.ema.alpha,
+            "observation_count": dict(registry.ema_observation_count),
+            "ema": {
+                column: {
+                    model: {
+                        "ema_mape": state.ema_mape,
+                        "count": state.count,
+                        "last_update": state.last_update,
+                    }
+                    for model, state in models.items()
+                }
+                for column, models in registry.ema.ema.items()
+            },
+        }
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(snapshot, indent=2), encoding="utf-8")
+        tmp.replace(path)
+        logger.debug(
+            "EMA snapshot saved: %d columns, %s observations",
+            len(snapshot["ema"]),
+            snapshot["observation_count"],
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("Failed to save EMA snapshot to %s", path_str)
+
+
+def _load_ema_snapshot() -> None:
+    """Restore EMA state + observation counts from ENSEMBLE_SNAPSHOT_PATH.
+
+    Called on startup *after* get_or_create() so registry.ema is guaranteed
+    to be set. Silently skips missing or unreadable snapshots — the sidecar
+    starts fresh in that case, which matches the previous behaviour.
+
+    Entries in the snapshot that reference models not present in the current
+    trained ensemble are kept in the EMA (they are harmless — to_beta_priors
+    only acts on models the ensemble knows about) so that cross-restart
+    history is not silently discarded if a model was temporarily unavailable.
+    """
+    path_str = ENSEMBLE_SNAPSHOT_PATH
+    if not path_str:
+        return
+    path = Path(path_str)
+    if not path.exists():
+        logger.info("No EMA snapshot at %s — starting fresh", path_str)
+        return
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        schema_version = raw.get("schema_version", 0)
+        if schema_version != 1:
+            logger.warning(
+                "Unknown EMA snapshot schema version %s; skipping restore", schema_version
+            )
+            return
+
+        if registry.ema is None:
+            logger.warning("EMA learner not initialised; snapshot not loaded")
+            return
+
+        # Restore alpha only if it still matches the default. If the env has
+        # overridden PRIOR_BLEND or alpha the operator's intent should win.
+        saved_alpha = float(raw.get("alpha", registry.ema.alpha))
+        if abs(saved_alpha - registry.ema.alpha) < 1e-9:
+            registry.ema.alpha = saved_alpha
+
+        from ace_hospital.substrate.ema_learner import ModelEMA  # noqa: PLC0415
+
+        ema_data: Dict[str, Dict[str, Any]] = raw.get("ema", {})
+        for column, models in ema_data.items():
+            if column not in registry.ema.ema:
+                registry.ema.ema[column] = {}
+            for model, state in models.items():
+                registry.ema.ema[column][model] = ModelEMA(
+                    ema_mape=float(state["ema_mape"]),
+                    count=int(state["count"]),
+                    last_update=float(state.get("last_update", time.time())),
+                )
+
+        obs: Dict[str, int] = raw.get("observation_count", {})
+        for col, count in obs.items():
+            registry.ema_observation_count[col] = int(count)
+
+        logger.info(
+            "EMA snapshot restored from %s: %d columns, %s observations, saved_at=%.0f",
+            path_str,
+            len(ema_data),
+            obs,
+            float(raw.get("saved_at", 0)),
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            "Failed to load EMA snapshot from %s — starting fresh", path_str
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -177,6 +301,14 @@ class HealthResponse(BaseModel):
     models_available: List[str]
     trained_columns: List[str]
     import_error: Optional[str] = None
+
+
+class SnapshotResponse(BaseModel):
+    snapshot_path: str
+    snapshot_exists: bool
+    columns_persisted: int
+    observation_count: Dict[str, int]
+    saved_at: Optional[float] = None
 
 
 # ---------------------------------------------------------------------------
@@ -462,7 +594,18 @@ def _apply_priors_as_deltas(
 
 @app.on_event("startup")
 def _startup() -> None:
-    """Optionally pre-load Chronos so the first /predict isn't slow."""
+    """Initialise registry and optionally pre-load Chronos.
+
+    EMA snapshot restoration happens here so that the first /predict after a
+    container restart benefits from calibration history accumulated before the
+    restart — without requiring a /train call first.
+    """
+    # Initialise the registry so registry.ema is not None before we try to
+    # load the snapshot. We only do this when ace_hospital is available.
+    if UnifiedACEEnsemble is not None:
+        registry.get_or_create()
+        _load_ema_snapshot()
+
     if os.environ.get("ENSEMBLE_LOAD_CHRONOS") != "1":
         logger.info("Chronos loading skipped (set ENSEMBLE_LOAD_CHRONOS=1 to enable)")
         return
@@ -658,6 +801,12 @@ def outcome(req: OutcomeRequest) -> OutcomeResponse:
     )
 
     priors = registry.ema.to_beta_priors(req.column, concentration=10.0)
+
+    # Persist the updated EMA state so calibration learning survives a
+    # container restart. The write is best-effort: a failure is logged but
+    # does NOT roll back the outcome or break the response.
+    _save_ema_snapshot()
+
     return OutcomeResponse(
         column=req.column,
         updated_priors=priors,
@@ -690,4 +839,38 @@ def get_priors(column: str) -> PriorsResponse:
         priors=priors,
         observation_count=registry.ema_observation_count.get(column, 0),
         ema_mape=ema_mape,
+    )
+
+
+@app.get("/snapshot", response_model=SnapshotResponse)
+def get_snapshot() -> SnapshotResponse:
+    """Inspect the current EMA snapshot state.
+
+    Returns metadata about the on-disk snapshot — whether it exists, when it
+    was last written, and how many columns are persisted. Does NOT trigger a
+    read or write. Intended for monitoring and debugging.
+    """
+    path_str = ENSEMBLE_SNAPSHOT_PATH
+    saved_at: Optional[float] = None
+    columns_persisted = 0
+
+    if path_str:
+        path = Path(path_str)
+        exists = path.exists()
+        if exists:
+            try:
+                raw = json.loads(path.read_text(encoding="utf-8"))
+                saved_at = float(raw.get("saved_at", 0)) or None
+                columns_persisted = len(raw.get("ema", {}))
+            except Exception:  # noqa: BLE001
+                pass
+    else:
+        exists = False
+
+    return SnapshotResponse(
+        snapshot_path=path_str or "(disabled)",
+        snapshot_exists=exists,
+        columns_persisted=columns_persisted,
+        observation_count=dict(registry.ema_observation_count),
+        saved_at=saved_at,
     )

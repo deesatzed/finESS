@@ -30,10 +30,17 @@ services:
       ENSEMBLE_LOAD_CHRONOS: ${ENSEMBLE_LOAD_CHRONOS:-0}
       ENSEMBLE_CHRONOS_SIZE: ${ENSEMBLE_CHRONOS_SIZE:-tiny}
       PYTHONPATH: /opt/ace_hospital:/app
+      # EMA snapshot persistence. The snapshot is written here after every
+      # /outcome call and restored on startup so calibration learning survives
+      # container restarts. Override to "" to disable persistence.
+      ENSEMBLE_SNAPSHOT_PATH: /data/ema_snapshot.json
     volumes:
       # Mount the upstream ace_hospital source. The host path is the local
       # dev workspace; CI should override this with a baked-in package.
       - ../aXc11426:/opt/ace_hospital:ro
+      # Named volume for EMA snapshot durability. Survives container restarts
+      # and image rebuilds; only wiped by `docker compose down -v`.
+      - ensemble_data:/data
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8001/health"]
@@ -41,3 +48,7 @@ services:
       timeout: 5s
       retries: 6
       start_period: 20s
+
+volumes:
+  ensemble_data:
+    driver: local
