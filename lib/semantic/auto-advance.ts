@@ -63,6 +63,10 @@ import type {
   ResearchBundle,
   ResearchMechanism,
 } from "@/lib/semantic/types";
+import { bundleToNode } from "@/lib/semantic/bundle-to-node";
+import { runSimulation } from "@/lib/engine/monte-carlo";
+import { computeSensitivity } from "@/lib/engine/sensitivity";
+import type { UncertaintyGraph } from "@/lib/types";
 import {
   researchLlmPrior,
   LlmPriorResearchError,
@@ -216,6 +220,8 @@ async function advanceOnce(
         return runResearch(state, opts, triggerEvent);
       }
       return null;
+    case "MODELING":
+      return runModeling(state);
     default:
       return null;
   }
@@ -485,6 +491,113 @@ async function runResearch(
     failResult.step.componentId = componentId;
     failResult.step.latencyMs = Date.now() - startedAt;
     return failResult;
+  }
+}
+
+/**
+ * P3: MODELING auto-advance — runs the Monte Carlo engine server-side.
+ *
+ * Converts every accepted ResearchBundle into a provenanced UncertaintyNode
+ * via bundleToNode(), builds a flat UncertaintyGraph (all nodes independent,
+ * a synthetic output node accumulates their means additively), runs the MC
+ * simulation (10 000 samples), computes sensitivity, and applies
+ * `modelComplete` with the results.
+ *
+ * Graph structure for the flat case: each bundle becomes a leaf node; a
+ * synthetic `_output` node receives additive edges from all leaves. The
+ * threshold from the conversation state is set on the graph so
+ * pAboveThreshold is computed correctly. For single-component conversations
+ * (common in tests) the leaf itself is the output node — no synthetic node
+ * is needed.
+ */
+async function runModeling(
+  state: Extract<SemanticState, { kind: "MODELING" }>,
+): Promise<{ state: SemanticState; step: AutoAdvanceStep }> {
+  const startedAt = Date.now();
+  try {
+    const nodes = state.components.map((component) => {
+      const bundle = state.bundles[component.id];
+      if (!bundle) {
+        throw new Error(
+          `No research bundle for component "${component.id}" ("${component.name}"). All components must be researched before running the model.`,
+        );
+      }
+      return bundleToNode(bundle, component);
+    });
+
+    let graph: UncertaintyGraph;
+
+    if (nodes.length === 1) {
+      graph = {
+        nodes,
+        edges: [],
+        outputNodeId: nodes[0].id,
+        threshold: state.threshold,
+      };
+    } else {
+      // Synthetic additive output node whose mean is the sum of all leaf means.
+      const outputMean = nodes.reduce((s, n) => s + n.mean, 0);
+      const outputSd = Math.sqrt(nodes.reduce((s, n) => s + n.sd * n.sd, 0));
+      const outputNode = {
+        id: "_semantic_output",
+        name: "Combined output",
+        description: "Additive combination of all research components",
+        distribution: "normal" as const,
+        mean: outputMean,
+        sd: Math.max(outputSd, 0.001),
+        range: [outputMean - 3 * outputSd, outputMean + 3 * outputSd] as [number, number],
+        unit: "",
+        source: "llm_prior" as const,
+      };
+      graph = {
+        nodes: [...nodes, outputNode],
+        edges: nodes.map((n) => ({
+          id: `edge_${n.id}_output`,
+          source: n.id,
+          target: "_semantic_output",
+          method: "additive" as const,
+        })),
+        outputNodeId: "_semantic_output",
+        threshold: state.threshold,
+      };
+    }
+
+    const config = { numSamples: 10_000, batchSize: 1_000 };
+    const simResult = runSimulation(graph, config);
+    const sensitivityResults = computeSensitivity(graph, config);
+
+    // Top sensitivity component: the leaf node (excluding the synthetic output)
+    // with the highest varianceReduction.
+    const topSensitivity = sensitivityResults
+      .filter((r) => r.nodeId !== "_semantic_output")
+      .sort((a, b) => b.varianceReduction - a.varianceReduction)[0];
+
+    const modelResult = {
+      topSensitivityComponentId: topSensitivity?.nodeId,
+      pAboveThreshold: simResult.pAboveThreshold,
+      raw: {
+        mean: simResult.mean,
+        median: simResult.median,
+        ciLow: simResult.ciLow,
+        ciHigh: simResult.ciHigh,
+        seed: simResult.seed,
+        sensitivity: sensitivityResults,
+      },
+    };
+
+    const next = reduce(state, { type: "modelComplete", result: modelResult });
+    return {
+      state: next,
+      step: {
+        eventType: "modelComplete",
+        fromState: "MODELING",
+        toState: next.kind,
+        latencyMs: Date.now() - startedAt,
+        failed: false,
+      },
+    };
+  } catch (err) {
+    return applyFail(state, "MODELING", err);
   }
 }
 

@@ -304,6 +304,7 @@ export function SemanticPanel({
                   ? state.thresholdLabel
                   : ""
               }
+              conversationId={conversation.id}
               isComplete={state.kind === "COMPLETE"}
               isBusy={isBusy}
               cockpitSlot={

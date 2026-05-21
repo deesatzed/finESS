@@ -8,6 +8,7 @@
  * &mdash; the cockpit handoff approach is "mount Dashboard as a
  * child of SemanticPanel" and ResultStep simply renders the slot.
  */
+import { useState } from "react";
 import type {
   ProposedComponent,
   ModelRunResult,
@@ -19,6 +20,8 @@ interface ResultStepProps {
   result: ModelRunResult;
   threshold: number;
   thresholdLabel: string;
+  /** The conversation id — used to build the export download URL. */
+  conversationId: string;
   /** True iff the conversation has reached COMPLETE (not just REVIEWING_RESULT). */
   isComplete: boolean;
   isBusy: boolean;
@@ -35,6 +38,7 @@ export function ResultStep({
   result,
   threshold,
   thresholdLabel,
+  conversationId,
   isComplete,
   isBusy,
   cockpitSlot,
@@ -43,6 +47,31 @@ export function ResultStep({
   onBack,
   onReset,
 }: ResultStepProps) {
+  const [downloading, setDownloading] = useState<"json" | "md" | null>(null);
+
+  async function handleDownload(format: "json" | "md") {
+    if (downloading) return;
+    setDownloading(format);
+    try {
+      const res = await fetch(
+        `/api/semantic/${conversationId}/export?format=${format}`,
+      );
+      if (!res.ok) throw new Error(`Export failed: ${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `conversation-${conversationId.slice(0, 8)}.${format === "md" ? "md" : "json"}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      // Silent failure — the UI remains functional; the console has the error.
+    } finally {
+      setDownloading(null);
+    }
+  }
   const topId = result.topSensitivityComponentId;
   const topComponent = topId
     ? components.find((c) => c.id === topId)
@@ -62,9 +91,29 @@ export function ResultStep({
           >
             {isComplete ? "Result accepted" : "Step 5 — Review the result"}
           </h2>
-          <span className="text-[11px] text-[#64748b]">
-            Threshold: {thresholdLabel} ({threshold})
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] text-[#64748b]">
+              Threshold: {thresholdLabel} ({threshold})
+            </span>
+            <button
+              type="button"
+              onClick={() => handleDownload("json")}
+              disabled={!!downloading}
+              aria-label="Download analysis as JSON"
+              className="rounded border border-[#1e293b] px-2 py-0.5 text-[10px] text-[#64748b] hover:border-[#3b82f6] hover:text-[#93c5fd] disabled:opacity-40"
+            >
+              {downloading === "json" ? "…" : "JSON"}
+            </button>
+            <button
+              type="button"
+              onClick={() => handleDownload("md")}
+              disabled={!!downloading}
+              aria-label="Download analysis as Markdown"
+              className="rounded border border-[#1e293b] px-2 py-0.5 text-[10px] text-[#64748b] hover:border-[#3b82f6] hover:text-[#93c5fd] disabled:opacity-40"
+            >
+              {downloading === "md" ? "…" : "MD"}
+            </button>
+          </div>
         </header>
         {pAbove !== undefined && (
           <p className="mt-2 text-xs text-[#cbd5e1]">
