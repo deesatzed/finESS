@@ -52,6 +52,54 @@ const STYLES: Record<NodeSource, SourceStyle> = {
     dotClass: "bg-sky-500",
     pillClass: "bg-sky-500/15 text-sky-300",
   },
+  web_search: {
+    label: "web search",
+    title:
+      "Values extracted from live web-search results (Tavily). Grounded in real sources — verify the linked URLs.",
+    borderClass: "border-violet-500",
+    dotClass: "bg-violet-500",
+    pillClass: "bg-violet-500/15 text-violet-300",
+  },
+  rag_document: {
+    label: "document",
+    title:
+      "Values extracted from operator-uploaded documents via RAG. Source text shown in citations.",
+    borderClass: "border-teal-500",
+    dotClass: "bg-teal-500",
+    pillClass: "bg-teal-500/15 text-teal-300",
+  },
+  multi_llm_consensus: {
+    label: "consensus",
+    title:
+      "Values synthesised from multiple LLMs. Disagreement score indicates epistemic spread.",
+    borderClass: "border-indigo-500",
+    dotClass: "bg-indigo-500",
+    pillClass: "bg-indigo-500/15 text-indigo-300",
+  },
+  ensemble_forecast: {
+    label: "ensemble",
+    title:
+      "Values derived from the ace_hospital ensemble forecast sidecar. Grounded in local model outputs.",
+    borderClass: "border-cyan-500",
+    dotClass: "bg-cyan-500",
+    pillClass: "bg-cyan-500/15 text-cyan-300",
+  },
+  empirical_observation: {
+    label: "empirical",
+    title:
+      "Values computed from operator-supplied CSV observation data. No LLM hallucination at the modeling layer.",
+    borderClass: "border-lime-500",
+    dotClass: "bg-lime-500",
+    pillClass: "bg-lime-500/15 text-lime-300",
+  },
+  expert_panel: {
+    label: "expert panel",
+    title:
+      "Values derived from operator-supplied expert estimates. No LLM call — pure statistical transform.",
+    borderClass: "border-rose-500",
+    dotClass: "bg-rose-500",
+    pillClass: "bg-rose-500/15 text-rose-300",
+  },
 };
 
 /**

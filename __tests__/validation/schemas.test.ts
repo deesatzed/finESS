@@ -192,4 +192,104 @@ describe("runtime validation schemas", () => {
       ).toThrow(/invalid impact/);
     });
   });
+
+  describe("NodeProvenance round-trip (D1)", () => {
+    const baseNode = {
+      id: "n1",
+      name: "N1",
+      description: "test",
+      distribution: "normal",
+      mean: 0.35,
+      sd: 0.12,
+      range: [0, 1],
+      unit: "",
+    };
+    const baseGraph = (node: Record<string, unknown>) => ({
+      nodes: [node],
+      edges: [{ id: "e1", source: "n1", target: "out", method: "additive" }],
+      outputNodeId: "out",
+    });
+
+    test("preserves provenance block with mechanism + citations through save/load", () => {
+      const provenance = {
+        mechanism: "web_search",
+        citations: [{ url: "https://example.com", title: "Source", snippet: "snip" }],
+        reasoning: "Grounded in real sources.",
+        conversationId: "conv-1",
+        componentId: "n1",
+      };
+      const validated = validateUncertaintyGraph(
+        baseGraph({ ...baseNode, source: "web_search", provenance })
+      );
+      const p = validated.nodes[0].provenance!;
+      expect(p.mechanism).toBe("web_search");
+      expect(p.citations).toHaveLength(1);
+      expect(p.citations[0].url).toBe("https://example.com");
+      expect(p.citations[0].title).toBe("Source");
+      expect(p.citations[0].snippet).toBe("snip");
+      expect(p.reasoning).toBe("Grounded in real sources.");
+      expect(p.conversationId).toBe("conv-1");
+      expect(p.componentId).toBe("n1");
+    });
+
+    test("preserves RAG citation fields (documentId, chunkId, chunkText, sourceFilename)", () => {
+      const provenance = {
+        mechanism: "rag_document",
+        citations: [
+          {
+            documentId: "doc-1",
+            chunkId: 2,
+            chunkText: "chunk content here",
+            sourceFilename: "paper.pdf",
+          },
+        ],
+      };
+      const validated = validateUncertaintyGraph(
+        baseGraph({ ...baseNode, source: "rag_document", provenance })
+      );
+      const cit = validated.nodes[0].provenance!.citations[0];
+      expect(cit.documentId).toBe("doc-1");
+      expect(cit.chunkId).toBe(2);
+      expect(cit.chunkText).toBe("chunk content here");
+      expect(cit.sourceFilename).toBe("paper.pdf");
+    });
+
+    test("omits provenance when not present (legacy nodes)", () => {
+      const validated = validateUncertaintyGraph(baseGraph({ ...baseNode }));
+      expect(validated.nodes[0].provenance).toBeUndefined();
+    });
+
+    test("coerces unknown mechanism to llm_prior and keeps citations", () => {
+      const provenance = {
+        mechanism: "unknown_future_mechanism",
+        citations: [{ source: "x" }],
+      };
+      const validated = validateUncertaintyGraph(
+        baseGraph({ ...baseNode, provenance })
+      );
+      expect(validated.nodes[0].provenance!.mechanism).toBe("llm_prior");
+      expect(validated.nodes[0].provenance!.citations).toHaveLength(1);
+    });
+
+    test("accepts all nine NodeSource values for node.source", () => {
+      const sources = [
+        "literature", "llm_prior", "user_override",
+        "web_search", "rag_document", "multi_llm_consensus",
+        "ensemble_forecast", "empirical_observation", "expert_panel",
+      ] as const;
+      for (const source of sources) {
+        const validated = validateUncertaintyGraph(
+          baseGraph({ ...baseNode, source })
+        );
+        expect(validated.nodes[0].source).toBe(source);
+      }
+    });
+
+    test("coerces unknown node.source to llm_prior", () => {
+      const validated = validateUncertaintyGraph(
+        baseGraph({ ...baseNode, source: "future_unknown" })
+      );
+      expect(validated.nodes[0].source).toBe("llm_prior");
+    });
+  });
 });

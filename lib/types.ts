@@ -25,8 +25,51 @@ export type CombinationMethod =
  * - "literature": values cited from published research (sourceNote should hold the citation)
  * - "llm_prior":  values produced by the LLM as a prior estimate (default when unspecified)
  * - "user_override": values supplied or edited by the human user via the UI
+ * - "web_search":  values extracted from live Tavily web-search results
+ * - "rag_document": values extracted from operator-uploaded RAG documents
+ * - "multi_llm_consensus": values synthesised from multi-LLM envelope
+ * - "ensemble_forecast": values derived from the ace_hospital ensemble sidecar
+ * - "empirical_observation": values computed from operator-supplied CSV data
+ * - "expert_panel": values derived from operator-supplied expert estimates
  */
-export type NodeSource = "literature" | "llm_prior" | "user_override";
+export type NodeSource =
+  | "literature"
+  | "llm_prior"
+  | "user_override"
+  | "web_search"
+  | "rag_document"
+  | "multi_llm_consensus"
+  | "ensemble_forecast"
+  | "empirical_observation"
+  | "expert_panel";
+
+/**
+ * Rich per-node provenance carried from Phase B research bundles (D1).
+ * Attached to UncertaintyNode when the node was built from a SemanticMode
+ * research result. Allows the UI and export layer to surface full citation
+ * chains without re-querying the conversation state.
+ */
+export interface NodeProvenance {
+  /** The research mechanism that produced this node's parameters. */
+  mechanism: NodeSource;
+  /** The SemanticConversation id this node was researched in (optional — only set for Semantic Mode nodes). */
+  conversationId?: string;
+  /** The component id within the conversation (maps to ProposedComponent.id). */
+  componentId?: string;
+  /** Citations that supported the proposed distribution + params. */
+  citations: Array<{
+    source?: string;
+    url?: string;
+    title?: string;
+    snippet?: string;
+    documentId?: string;
+    chunkId?: string | number;
+    chunkText?: string;
+    sourceFilename?: string;
+  }>;
+  /** LLM reasoning text from the research bundle. */
+  reasoning?: string;
+}
 
 /** A single uncertainty node in the graph */
 export interface UncertaintyNode {
@@ -50,6 +93,12 @@ export interface UncertaintyNode {
   source?: NodeSource;
   /** Optional one-line citation or note describing the source. */
   sourceNote?: string;
+  /**
+   * Rich provenance block (D1 — Phase D). Populated when the node was built
+   * from a Semantic Mode research bundle. Legacy/Path-A graphs leave this
+   * undefined; consumers should treat absence as unknown provenance.
+   */
+  provenance?: NodeProvenance;
   /**
    * Triangular distribution parameters. Used only when `distribution === "triangular"`.
    * Must satisfy `min <= mode <= max`. When triangular is selected, `mean` and `sd`

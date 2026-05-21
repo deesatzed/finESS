@@ -1,6 +1,8 @@
 import type {
   CombinationMethod,
   DistributionType,
+  NodeProvenance,
+  NodeSource,
   ReasoningEdge,
   SensitivityResult,
   SimulationResult,
@@ -15,6 +17,18 @@ const VALID_DISTRIBUTIONS: DistributionType[] = [
   "uniform",
   "lognormal",
   "triangular",
+];
+
+const VALID_NODE_SOURCES: NodeSource[] = [
+  "literature",
+  "llm_prior",
+  "user_override",
+  "web_search",
+  "rag_document",
+  "multi_llm_consensus",
+  "ensemble_forecast",
+  "empirical_observation",
+  "expert_panel",
 ];
 
 const VALID_METHODS: CombinationMethod[] = [
@@ -220,17 +234,19 @@ function validateNode(value: unknown): UncertaintyNode {
     range: [node.range[0], node.range[1]],
     unit: node.unit,
     group: typeof node.group === "string" ? node.group : undefined,
-    // M8-08: carry provenance through save/load. Mirror the coercion in
-    // lib/ai/parse-response.ts:normalizeNode so missing/unknown values resolve
-    // to "llm_prior" rather than dropping the field. Without this, user edits
-    // that set source = "user_override" silently revert on next load.
-    source:
-      node.source === "literature" || node.source === "user_override"
-        ? node.source
-        : "llm_prior",
+    // M8-08 / D1: carry provenance through save/load. Expand the known-source
+    // list to include all Phase B mechanism sources (D1). Unknown values fall
+    // back to "llm_prior" — the conservative assumption when provenance is missing.
+    source: VALID_NODE_SOURCES.includes(node.source as NodeSource)
+      ? (node.source as NodeSource)
+      : "llm_prior",
   };
   if (typeof node.sourceNote === "string" && node.sourceNote.trim() !== "") {
     validated.sourceNote = node.sourceNote;
+  }
+  // D1: carry rich NodeProvenance block through save/load.
+  if (isRecord(node.provenance)) {
+    validated.provenance = validateNodeProvenance(node.provenance);
   }
   // C1: carry triangular params through save/load. Validated above.
   if (node.distribution === "triangular") {
@@ -251,6 +267,41 @@ function validateNode(value: unknown): UncertaintyNode {
     validated.impact = node.impact as UncertaintyNode["impact"];
   }
   return validated;
+}
+
+/**
+ * D1: Leniently validate and carry through a NodeProvenance block.
+ * Unknown extra fields are dropped (open-shape forward compat).
+ * The only required field is `mechanism`; everything else is optional.
+ */
+function validateNodeProvenance(raw: Record<string, unknown>): NodeProvenance {
+  const mechanism = VALID_NODE_SOURCES.includes(raw.mechanism as NodeSource)
+    ? (raw.mechanism as NodeSource)
+    : "llm_prior";
+
+  const citations: NodeProvenance["citations"] = [];
+  if (Array.isArray(raw.citations)) {
+    for (const c of raw.citations) {
+      if (!isRecord(c)) continue;
+      const entry: NodeProvenance["citations"][number] = {};
+      if (typeof c.source === "string") entry.source = c.source;
+      if (typeof c.url === "string") entry.url = c.url;
+      if (typeof c.title === "string") entry.title = c.title;
+      if (typeof c.snippet === "string") entry.snippet = c.snippet;
+      if (typeof c.documentId === "string") entry.documentId = c.documentId;
+      if (typeof c.chunkId === "string" || typeof c.chunkId === "number")
+        entry.chunkId = c.chunkId;
+      if (typeof c.chunkText === "string") entry.chunkText = c.chunkText;
+      if (typeof c.sourceFilename === "string") entry.sourceFilename = c.sourceFilename;
+      citations.push(entry);
+    }
+  }
+
+  const prov: NodeProvenance = { mechanism, citations };
+  if (typeof raw.conversationId === "string") prov.conversationId = raw.conversationId;
+  if (typeof raw.componentId === "string") prov.componentId = raw.componentId;
+  if (typeof raw.reasoning === "string") prov.reasoning = raw.reasoning;
+  return prov;
 }
 
 function validateEdge(value: unknown): ReasoningEdge {
