@@ -238,4 +238,136 @@ describe("openrouter-client callChat", () => {
     expect(result.content).toBe("recovered");
     expect(fetchFake).toHaveBeenCalledTimes(2);
   });
+
+  // ---------------------------------------------------------------------------
+  // Input guard coverage (lines 256, 262, 265, 273)
+  // ---------------------------------------------------------------------------
+
+  test("throws NETWORK when apiKey is empty string", async () => {
+    await expect(
+      callChat({ ...BASE_OPTS, apiKey: "", fetchImpl: jest.fn() as unknown as typeof fetch })
+    ).rejects.toMatchObject({ code: "NETWORK" });
+  });
+
+  test("throws NETWORK when model is empty string", async () => {
+    await expect(
+      callChat({ ...BASE_OPTS, model: "", fetchImpl: jest.fn() as unknown as typeof fetch })
+    ).rejects.toMatchObject({ code: "NETWORK" });
+  });
+
+  test("throws NETWORK when messages array is empty", async () => {
+    await expect(
+      callChat({ ...BASE_OPTS, messages: [], fetchImpl: jest.fn() as unknown as typeof fetch })
+    ).rejects.toMatchObject({ code: "NETWORK" });
+  });
+
+  test("throws NETWORK when fetchImpl is undefined and globalThis.fetch is unavailable", async () => {
+    const origFetch = (globalThis as Record<string, unknown>).fetch;
+    (globalThis as Record<string, unknown>).fetch = undefined;
+    try {
+      await expect(callChat({ ...BASE_OPTS })).rejects.toMatchObject({ code: "NETWORK" });
+    } finally {
+      (globalThis as Record<string, unknown>).fetch = origFetch;
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // Env-driven timeout + budget resolution (lines 85-86, 97-98)
+  // ---------------------------------------------------------------------------
+
+  test("OPENROUTER_TIMEOUT_MS env var is used when no explicit timeoutMs", async () => {
+    process.env.OPENROUTER_TIMEOUT_MS = "999999";
+    const fetchFake = jest
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(happyBody("ok", 0.001)));
+    const result = await callChat({ ...BASE_OPTS, fetchImpl: fetchFake as unknown as typeof fetch });
+    expect(result.content).toBe("ok");
+  });
+
+  test("OPENROUTER_PER_CALL_BUDGET_USD env var is used when no explicit costBudgetUsd", async () => {
+    process.env.OPENROUTER_PER_CALL_BUDGET_USD = "0.0001";
+    const fetchFake = jest
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(happyBody("ok", 0.01)));
+    await expect(
+      callChat({ ...BASE_OPTS, fetchImpl: fetchFake as unknown as typeof fetch })
+    ).rejects.toMatchObject({ code: "BUDGET_EXCEEDED" });
+  });
+
+  // ---------------------------------------------------------------------------
+  // buildRequestInit: temperature + responseFormat included (lines 114, 117)
+  // ---------------------------------------------------------------------------
+
+  test("includes temperature and responseFormat in request body", async () => {
+    const fetchFake = jest
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(happyBody("ok", 0.001)));
+    await callChat({
+      ...BASE_OPTS,
+      temperature: 0.5,
+      responseFormat: { type: "json_object" },
+      fetchImpl: fetchFake as unknown as typeof fetch,
+    });
+    const body = JSON.parse((fetchFake.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.temperature).toBe(0.5);
+    expect(body.response_format).toEqual({ type: "json_object" });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Caller signal already aborted before first attempt (lines 148-149)
+  // ---------------------------------------------------------------------------
+
+  test("caller AbortSignal already aborted → throws NETWORK without HTTP call", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const fetchFake = jest
+      .fn()
+      .mockRejectedValue(Object.assign(new Error("aborted"), { name: "AbortError" }));
+    await expect(
+      callChat({ ...BASE_OPTS, signal: controller.signal, fetchImpl: fetchFake as unknown as typeof fetch })
+    ).rejects.toMatchObject({ code: "NETWORK" });
+  });
+
+  // ---------------------------------------------------------------------------
+  // extractChoice: empty choices array → empty content → EMPTY_RESPONSE (line 230)
+  // ---------------------------------------------------------------------------
+
+  test("response with empty choices array throws EMPTY_RESPONSE", async () => {
+    const fetchFake = jest
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ model: "m", choices: [], usage: { cost: 0 } }));
+    await expect(
+      callChat({ ...BASE_OPTS, fetchImpl: fetchFake as unknown as typeof fetch })
+    ).rejects.toMatchObject({ code: "EMPTY_RESPONSE" });
+  });
+
+  // ---------------------------------------------------------------------------
+  // response.json() throws (lines 310-311)
+  // ---------------------------------------------------------------------------
+
+  test("throws EMPTY_RESPONSE when response body is not valid JSON", async () => {
+    const badResponse = new Response("not-json", {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+    const fetchFake = jest.fn().mockResolvedValueOnce(badResponse);
+    await expect(
+      callChat({ ...BASE_OPTS, fetchImpl: fetchFake as unknown as typeof fetch })
+    ).rejects.toMatchObject({ code: "EMPTY_RESPONSE" });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Retry exhausted → throws lastError (line 303)
+  // ---------------------------------------------------------------------------
+
+  test("throws HTTP_ERROR when both attempts return HTTP 503", async () => {
+    const fetchFake = jest
+      .fn()
+      .mockResolvedValueOnce(new Response(null, { status: 503 }))
+      .mockResolvedValueOnce(new Response(null, { status: 503 }));
+    await expect(
+      callChat({ ...BASE_OPTS, fetchImpl: fetchFake as unknown as typeof fetch })
+    ).rejects.toMatchObject({ code: "HTTP_ERROR", httpStatus: 503 });
+    expect(fetchFake).toHaveBeenCalledTimes(2);
+  });
 });

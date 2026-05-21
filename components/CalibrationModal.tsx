@@ -55,10 +55,27 @@ interface CalibrationBin {
   count: number;
 }
 
+interface ReliabilityBin {
+  lowerBin: number;
+  upperBin: number;
+  count: number;
+  predictedMean: number;
+  observedFrequency: number;
+}
+
+interface ReliabilityReport {
+  bins: ReliabilityBin[];
+  totalCount: number;
+  isReliable: boolean;
+}
+
 interface CalibrationReady {
   ready: true;
   count: number;
   calibrationCurve: CalibrationBin[];
+  // C5a: full reliability report including empty bins (count===0). Used by
+  // the canvas to render empty-bin indicators transparently (D — P2 fix).
+  reliability?: ReliabilityReport;
   // C5b: Brier score for the same outcome set. NaN when count===0 (defensive
   // — the ready=true branch implies count>=20 so brierScore should always be
   // finite here). brierCount is the number of outcomes that contributed.
@@ -299,7 +316,7 @@ export default function CalibrationModal({
   // -- Canvas drawing -----------------------------------------
 
   const drawCalibrationCurve = useCallback(
-    (curve: CalibrationBin[]) => {
+    (curve: CalibrationBin[], reliability?: ReliabilityReport) => {
       const canvas = canvasRef.current;
       const container = containerRef.current;
       if (!canvas || !container) return;
@@ -408,6 +425,32 @@ export default function CalibrationModal({
         }
       }
 
+      // -- Empty-bin indicators (D — P2) -----------------------
+      // Render bins with no data as small hollow tick marks on the
+      // x-axis so the operator can see "we have no calibration data
+      // in the 0.4–0.5 range" rather than a silent gap.
+
+      if (reliability) {
+        const emptyBins = reliability.bins.filter((b) => b.count === 0);
+        ctx.save();
+        ctx.strokeStyle = "#475569"; // slate-600 — muted, not distracting
+        ctx.lineWidth = 1;
+        for (const b of emptyBins) {
+          const binMid = (b.lowerBin + b.upperBin) / 2;
+          const bx = chartX + binMid * chartW;
+          const by = chartY + chartH;
+          ctx.beginPath();
+          ctx.moveTo(bx, by);
+          ctx.lineTo(bx, by - 6);
+          ctx.stroke();
+          // Hollow circle at the tick top to visually distinguish from data
+          ctx.beginPath();
+          ctx.arc(bx, by - 8, 3, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+
       // -- Axis labels ------------------------------------------
 
       ctx.fillStyle = TEXT_DIM;
@@ -474,13 +517,14 @@ export default function CalibrationModal({
     if (!calibrationData || !calibrationData.ready) return;
 
     const curve = calibrationData.calibrationCurve;
-    drawCalibrationCurve(curve);
+    const reliability = calibrationData.reliability;
+    drawCalibrationCurve(curve, reliability);
 
     const container = containerRef.current;
     if (!container) return;
 
     const observer = new ResizeObserver(() => {
-      drawCalibrationCurve(curve);
+      drawCalibrationCurve(curve, reliability);
     });
     observer.observe(container);
 
