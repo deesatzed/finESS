@@ -1,439 +1,414 @@
 # finESS — Handoff Packet
-**Generated:** 2026-05-20T14:24Z
-**Branch:** `main` @ `3db8a20`
-**Last Commit:** 2026-05-20 10:22 -0400 — `feat(B6): research-mechanism picker UI + RESEARCHING auto-advance`
+**Generated:** 2026-05-21T18:30Z  
+**Branch:** `main` @ `518f509`  
+**Last Commit:** 2026-05-21 — `docs: update handoff for P3 completion`
 
 ---
 
 ## Quick Resume Checklist
-
-- [ ] `git fetch && git checkout main && git pull` (HEAD should be `3db8a20`)
-- [ ] `cp .env.example .env && cp .env.example .env.local` (then set `OPENROUTER_API_KEY` and optionally `TAVILY_API_KEY` in `.env.local`)
-- [ ] `npm install`  (B3 added @xenova/transformers + @lancedb/lancedb + pdf-parse — fresh checkouts need this)
+- [ ] `git fetch && git checkout main && git pull` (HEAD should be `518f509`)
+- [ ] `cp .env.example .env && cp .env.example .env.local` (set `OPENROUTER_API_KEY`, optionally `TAVILY_API_KEY`)
+- [ ] `npm install`
 - [ ] `npx prisma generate && npx prisma db push --skip-generate`
 - [ ] `npm run check:env` → `Environment preflight passed`
-- [ ] `npm test -- --runInBand` → `59 suites passed (13 skipped), 879 passed, 25 skipped, 904 total`
+- [ ] `npm test -- --runInBand` → `63 suites passed (13 skipped), 962 passed, 25 skipped, 987 total`
 - [ ] `npm run build` → `Compiled successfully`
 - [ ] `npm run lint` → `No ESLint warnings or errors`
-- [ ] (Forecast Mode + R6-06 calibration loop) `docker compose up -d ensemble && curl -fsS http://localhost:8001/health`
-- [ ] Review **Current Blockers** and **Next Steps** sections
+- [ ] Review **Current State Assessment** and **Next Steps** sections
 
 ## AI Continuity Checklist
-
-- [x] Latest handoff reviewed (`HANDOFF_2026-05-19.md` superseded by this packet)
-- [x] Open assumptions imported
-- [x] Open debt items imported
-- [x] Open error references imported
-- [x] Verification suite executed at handoff time (results below are measured, not remembered)
-- [x] Next actions prioritized (P0 / P1 / P2)
+- [x] Latest handoff reviewed (`HANDOFF_2026-05-21.md` — this packet supersedes all prior)
+- [x] Open assumptions imported — none outstanding
+- [x] Open debt items imported — RAG integration tests gated (known, acceptable)
+- [x] Open error references imported — none
+- [x] Verification suite executed at handoff time (results below are measured)
+- [x] Next actions prioritized — no outstanding planned work; all P0–P3 complete
 
 ---
 
 ## What This Project Does
 
-finESS is a **local Next.js + Prisma/SQLite uncertainty workbench**. A single operator on their own machine builds probabilistic models in one of five user-facing modes:
+finESS is a **local Next.js + Prisma/SQLite uncertainty workbench**. A single operator on their own machine builds probabilistic models in one of five user-facing modes: Semantic (multi-turn conversation → research → Monte Carlo), Forecast (time-series CSV + Python ensemble), Real Data (empirical CSV stats), Multi-LLM Proposer, and Path A Simulation. The distinguishing feature is **honest uncertainty**: every number has a distribution, every distribution has a provenance chain, and every result comes with a calibrated spread rather than a point estimate.
 
-1. **Semantic Mode** *(Phase A + B — new in this batch)*: multi-turn conversation that asks clarifying questions, identifies key uncertain components, and researches each component's distribution via one of seven mechanisms (LLM prior, web search via Tavily, RAG over uploaded documents, multi-LLM consensus, ensemble forecast, empirical observation from a CSV, or operator-supplied expert panel estimates). Each research result carries its own typed citations.
-2. **Forecast Mode**: time-series CSV → real Python ensemble sidecar (wrapping `ace_hospital.UnifiedACEEnsemble`) → per-model weights + 95% interval. Calibration outcomes feed back via Beta priors (R6-06).
-3. **Real Data Mode**: CSV → empirical stats + optional LLM narration of those stats. No LLM hallucination at the modeling layer.
-4. **Multi-LLM Proposer** *(Path A — gated)*: parallel fan-out to all configured LLMs; surfaces between-model disagreement.
-5. **Path A Simulation** *(legacy / gated by `LEGACY_PATH_A_ENABLED`)*: single-LLM uncertainty graph + Monte Carlo. Non-dismissible amber draft banner.
+**Tech Stack:** TypeScript (Next.js 14.2.35 App Router), React 18, Prisma 6.19 / SQLite, Python 3.11 / FastAPI sidecar, OpenRouter for LLMs, Tavily for web search, `@xenova/transformers` BGE + `@lancedb/lancedb` for RAG, Jest for tests, Docker Compose for the sidecar.
 
-It is a **pre-production local beta** — not a hosted multi-tenant service, ships no advisory content in any regulated domain.
-
-**Tech Stack:** TypeScript (Next.js 14.2.35 App Router), React, Prisma 6.19 / SQLite, Python 3.11 / FastAPI sidecar, OpenRouter for LLMs, Tavily for web search (Phase B2), `@xenova/transformers` BAAI/bge-small-en-v1.5 + `@lancedb/lancedb` for RAG (Phase B3), Jest for tests, Docker Compose for the sidecar.
-
-**Architecture:** Local monolith with one optional Python sidecar over HTTP; no external auth; SQLite for persistence; OpenRouter + Tavily as the only outbound providers, both gated through budget-capped clients.
+**Architecture Pattern:** Monolith Next.js app + detached Python sidecar (Docker). No auth server, no cloud dependency — runs fully local.
 
 ---
 
-## Project Structure (changes since 2026-05-19)
+## Project Structure
 
 ```
 finESS/
-├── app/api/                           Next.js App Router server routes
-│   ├── semantic/                       NEW (Phase A2)
-│   │   ├── route.ts                    POST (create with auto-advance) + GET (list)
-│   │   ├── [id]/route.ts               GET / PATCH (typed events + auto-advance) / DELETE
-│   │   └── documents/                  NEW (Phase B3 — RAG document store)
-│   │       ├── route.ts                POST upload + GET list
-│   │       └── [id]/route.ts           GET / DELETE
-│   └── [other 9 existing routes unchanged]
+├── app/                        Next.js App Router pages + API routes
+│   ├── api/
+│   │   ├── analyze/            Path A + Multi-LLM Proposer endpoints
+│   │   ├── calibration/        Brier score + reliability + EMA feedback
+│   │   ├── forecast/           Time-series → ensemble sidecar proxy
+│   │   ├── real-data/          CSV upload + LLM narration
+│   │   └── semantic/           Full Semantic Mode API (CRUD + events + export)
+│   │       └── [id]/export/    GET ?format=json|md export endpoint (D3)
+│   └── page.tsx                Single-page dashboard shell
 ├── components/
-│   ├── SemanticPanel.tsx              NEW (Phase A5) — orchestrates step components
-│   ├── semantic/                       NEW (Phase A5 + B6)
-│   │   ├── SemanticHonestyBanner.tsx
-│   │   ├── SemanticHistory.tsx
-│   │   ├── ClarificationStep.tsx
-│   │   ├── ComponentReviewStep.tsx
-│   │   ├── ThresholdStep.tsx
-│   │   ├── ResearchStep.tsx           UPDATED (B6) — real mechanism picker + inline forms
-│   │   └── ResultStep.tsx
-│   └── [other components unchanged]
+│   ├── semantic/               ClarificationStep, ComponentReviewStep,
+│   │                           ThresholdStep, ResearchStep, ResultStep,
+│   │                           SemanticHistory, SemanticHonestyBanner
+│   ├── panels/                 Individual Dashboard cockpit panels
+│   ├── SemanticPanel.tsx       Top-level Semantic Mode container
+│   ├── Dashboard.tsx           6-panel cockpit host
+│   └── CalibrationModal.tsx    Reliability + Brier canvas rendering
 ├── lib/
-│   ├── semantic/                       NEW (Phases A + B)
-│   │   ├── state-machine.ts           A1 — 12 states, 22 transitions, SemanticStateError
-│   │   ├── types.ts                    A1 — discriminated union; ResearchBundle + ResearchCitation
-│   │   ├── persistence.ts              A2 — serialize/deserialize with Set envelope
-│   │   ├── api-client.ts               A5 + B6 — typed wrappers; sends mechanism inputs
-│   │   ├── narration.ts                A5 — state-transition → plain-language line
-│   │   ├── auto-advance.ts             A5-followup + B6 — server-side LLM dispatch
-│   │   ├── clarify.ts                  A3 — LLM clarifying questions
-│   │   ├── propose-components.ts       A4 — LLM component identification
-│   │   └── research/                   NEW (Phase B)
-│   │       ├── llm-prior.ts            B1 — LLM-only research
-│   │       ├── web.ts                  B2 — Tavily search + LLM extractor
-│   │       ├── rag.ts                  B3 — BGE embed + LanceDB + LLM
-│   │       ├── consensus.ts            B4 — Multi-LLM parallel + envelope synthesis
-│   │       ├── forecast.ts             B5 — ace_hospital ensemble adapter
-│   │       ├── empirical.ts            B5 — CSV empirical analyzer adapter
-│   │       └── expert-panel.ts         B7 — pure stat transform from operator estimates
-│   ├── search/                         NEW (Phase B2)
-│   │   ├── provider.ts                 SearchProvider interface + SearchError
-│   │   ├── tavily.ts                   Tavily implementation
-│   │   └── index.ts                    getSearchProvider() factory
-│   ├── rag/                            NEW (Phase B3)
-│   │   ├── chunker.ts                  character-window with overlap
-│   │   ├── extract.ts                  mime-aware text extractor (md/txt/csv/pdf)
-│   │   ├── embed.ts                    BGE pipeline wrapper (eval-require workaround)
-│   │   └── store.ts                    LanceDB per-workspace tables
-│   ├── validation/
-│   │   ├── semantic.ts                 EXTENDED — citations + B6 startResearch inputs
-│   │   └── semantic-documents.ts       NEW (Phase B3)
-│   ├── audit/events.ts                EXTENDED — new event types per phase
-│   └── [other unchanged]
+│   ├── semantic/
+│   │   ├── state-machine.ts    Pure reducer: 12 states, all events
+│   │   ├── auto-advance.ts     Server-side LLM dispatch + MODELING MC
+│   │   ├── bundle-to-node.ts   ResearchBundle → UncertaintyNode (D1)
+│   │   ├── export.ts           Conversation → JSON / Markdown (D3)
+│   │   ├── persistence.ts      Prisma CRUD for SemanticConversation
+│   │   ├── research/           7 research mechanism adapters (B1–B7)
+│   │   ├── narration.ts        Human-readable event narration
+│   │   └── types.ts            SemanticMode-specific types
+│   ├── engine/
+│   │   ├── monte-carlo.ts      runSimulation() — 10k sample MC
+│   │   └── sensitivity.ts      computeSensitivity() — variance reduction
+│   ├── ai/                     OpenRouter client, model config, prompt builders
+│   ├── audit/                  AuditEventType union + PII sanitizer
+│   ├── calibration/            Brier score, reliability diagram
+│   ├── forecast/               CSV parsing, sidecar client, ensemble adapter
+│   ├── rag/                    BGE embeddings, LanceDB chunker/retrieval
+│   ├── search/                 Tavily web-search provider
+│   ├── types.ts                UncertaintyNode, NodeProvenance, graph types
+│   └── validation/             Zod schemas for all persistence round-trips
+├── services/ensemble/          Python FastAPI sidecar (ace_hospital wrapper)
+│   ├── app.py                  EMA snapshot load/save + /train /predict /outcome /snapshot
+│   └── tests/                  11 EMA durability tests (pytest)
 ├── prisma/
-│   ├── schema.prisma                  EXTENDED — SemanticConversation + SemanticDocument
-│   └── migrations/
-│       ├── 20260519130000_add_semantic_conversation/
-│       └── 20260520120000_add_semantic_document/   NEW (Phase B3)
-├── services/ensemble/                  unchanged (R6-04)
-├── scripts/                            unchanged
-└── __tests__/                          181 TS/TSX files total (+68 since last handoff)
+│   ├── schema.prisma           Analysis, Calibration, SemanticConversation, SemanticDocument
+│   └── migrations/             3 applied migrations
+├── __tests__/                  76 Jest suites (63 active, 13 gated)
+├── scripts/                    check-env.mjs, preflight-models.mjs, smoke scripts
+├── docker-compose.yml          ensemble sidecar + ensemble_data named volume
+└── .github/workflows/ci.yml    CI: check-env → test → e2e → build
 ```
+
+**Entry Points:**
+- `app/page.tsx` — single-page shell, mounts Dashboard with all five mode tabs
+- `app/api/semantic/route.ts` — POST creates conversation; GET lists
+- `app/api/semantic/[id]/route.ts` — GET conversation; PATCH dispatches event + auto-advance
+- `services/ensemble/app.py` — Python FastAPI sidecar (`uvicorn app:app --port 8001`)
+
+**Key Modules:**
+
+| Module | Path | Purpose | Status |
+|--------|------|---------|--------|
+| Semantic state machine | `lib/semantic/state-machine.ts` | Pure reducer, 12 states | ✅ |
+| MODELING auto-advance | `lib/semantic/auto-advance.ts` | Server-side MC + sensitivity (P3a) | ✅ |
+| bundleToNode | `lib/semantic/bundle-to-node.ts` | ResearchBundle → provenanced node (D1) | ✅ |
+| Conversation export | `lib/semantic/export.ts` | JSON + Markdown export (D3) | ✅ |
+| Monte Carlo engine | `lib/engine/monte-carlo.ts` | runSimulation() 10k samples | ✅ |
+| Sensitivity analysis | `lib/engine/sensitivity.ts` | computeSensitivity() variance reduction | ✅ |
+| EMA sidecar | `services/ensemble/app.py` | Calibration learning with persistence (P2) | ✅ |
+| RAG pipeline | `lib/rag/` | BGE + LanceDB document retrieval (B3) | ✅ gated |
+| Audit events | `lib/audit/events.ts` | PII-safe event emission (D2) | ✅ |
 
 ---
 
 ## How to Run
 
-### Local development
-
+### Local Development
 ```bash
-# Setup (one-time)
-cp .env.example .env          # Prisma reads DATABASE_URL from here
-cp .env.example .env.local    # Next.js reads OPENROUTER_* etc. at runtime
-#   Set OPENROUTER_API_KEY in .env.local (required for Path A, Semantic Mode,
-#   Multi-LLM, Forecast narration, AI Assist).
-#   Optionally set TAVILY_API_KEY for the web_search research mechanism.
+# One-time setup
+cp .env.example .env
+cp .env.example .env.local
+# Edit .env.local — set OPENROUTER_API_KEY (required for LLM research mechanisms)
+# Edit .env.local — set TAVILY_API_KEY (required for web_search mechanism only)
+
 npm install
 npx prisma generate
-npx prisma db push --skip-generate   # apply both Phase A and Phase B migrations
+npx prisma db push
 
-# Optional sidecar (required for Forecast Mode + calibration loop + the
-# ensemble_forecast research mechanism)
+# Verify environment
+npm run check:env       # → Environment preflight passed
+
+# Start dev server
+npm run dev             # → http://localhost:3000
+
+# Optional: start Python ensemble sidecar (required for Forecast Mode)
 docker compose up -d ensemble
-curl -fsS http://localhost:8001/health
-
-# Dev server
-npm run dev -- -H 127.0.0.1 -p 3100
+curl -fsS http://localhost:8001/health   # → {"status":"ok",...}
 ```
 
 ### Tests
-
 ```bash
-npm test -- --runInBand        # 879 unit + e2e tests, 25 gated-skipped
-npm run test:e2e                # E2E API-route tests
-npm run test:coverage           # per-file gates + global gate (84%)
-
-# Gated integration tests (require their respective env flags + sometimes a sidecar/key)
-docker compose up -d ensemble
-RUN_ENSEMBLE_INTEGRATION=1 npx jest __tests__/integration/forecast.integration.test.ts --runInBand
-RUN_ENSEMBLE_INTEGRATION=1 npx jest __tests__/integration/calibration-loop.integration.test.ts --runInBand
-RUN_ENSEMBLE_INTEGRATION=1 npx jest __tests__/integration/semantic-research-forecast.integration.test.ts --runInBand
-RUN_OPENROUTER_LIVE=1     npx jest __tests__/integration/analyze-multi.integration.test.ts --runInBand
-RUN_OPENROUTER_LIVE=1     npx jest __tests__/integration/semantic-clarify.integration.test.ts --runInBand
-RUN_OPENROUTER_LIVE=1     npx jest __tests__/integration/semantic-propose.integration.test.ts --runInBand
-RUN_OPENROUTER_LIVE=1     npx jest __tests__/integration/semantic-auto-advance.integration.test.ts --runInBand
-RUN_OPENROUTER_LIVE=1     npx jest __tests__/integration/semantic-research-llm-prior.integration.test.ts --runInBand
-RUN_OPENROUTER_LIVE=1     npx jest __tests__/integration/semantic-research-consensus.integration.test.ts --runInBand
-TAVILY_LIVE=1 RUN_OPENROUTER_LIVE=1 npx jest __tests__/integration/semantic-research-web.integration.test.ts --runInBand
-# RAG: see "RAG Jest harness gap" in Known Issues below — currently blocked
+npm test -- --runInBand
 ```
+**Current Status:** 962 passing, 0 failing, 25 skipped (13 suites skipped)  
+**Known Skips:**
+- 12 RAG integration tests gated behind `RUN_RAG_INTEGRATION=1`
+- Integration tests requiring `OPENROUTER_API_KEY` and live OpenRouter (gated in CI env)
 
-### Verification suite at handoff time (2026-05-20T14:24Z)
-
+### Verification Suite
+```bash
+npm run check:env && npm test -- --runInBand && npm run build && npm run lint
 ```
-$ npm run check:env
-Environment preflight passed
-
-$ npm test -- --runInBand
-Test Suites: 13 skipped, 59 passed, 59 of 72 total
-Tests:       25 skipped, 879 passed, 904 total
-
-$ npm run build
-Compiled successfully (12 routes registered including /api/semantic/*, /api/semantic/documents/*)
-
-$ npm run lint
-No ESLint warnings or errors
-
-$ npm run test:coverage
-All per-file and global gates pass.
-lib/validation/semantic.ts: 96.22% statements / 93.11% branches.
-
-$ OPENROUTER_LIVE_SMOKE=1 npm run smoke:openrouter
-OPENROUTER_LIVE_SMOKE_OK: model=google/gemini-3.5-flash-20260519; latencyMs=4648; costUsd=0.0080; retryCount=0
-```
-
-Four live integration tests verified by the orchestrator before commit:
-`LIVE_LLM_PRIOR_RESEARCH_OK`, `LIVE_WEB_RESEARCH_OK` (with real Tavily URLs), `LIVE_SEMANTIC_CONSENSUS_OK` (two-model disagreement), and the forecast adapter against the live sidecar.
+**Pass Condition:** `987 tests, 0 failures` + `Compiled successfully` + `No ESLint warnings or errors`
 
 ---
 
 ## Current State Assessment
 
-### What's working ✅
+### What's Working ✅
 
-**Semantic Mode (full pipeline):**
-- POST /api/semantic with a query → server creates conversation + fires A3 clarifier → returns AWAITING_ANSWERS with real LLM-generated questions in one HTTP round trip.
-- Same auto-advance applies on PATCH for submitClarifications (calls A4) and for startResearch (calls the chosen mechanism adapter).
-- Six of seven research mechanisms verified live or by unit + gated integration tests. (The seventh, RAG, has a Jest harness gap — see Known Issues.)
-- Honest failure semantics: any adapter error dispatches the `fail` event so the conversation moves to ERROR with sourceState preserved for `back()` recovery.
+**Semantic Mode — complete end-to-end (A1–A5, B1–B7, D1–D3, P3a–P3b):**
+- A1 State machine: 12 states, all reducer transitions — 52 unit tests
+- A2 Persistence + API: SQLite-backed conversation CRUD — 33 tests
+- A3 Clarifying questions: LLM-generated, user-editable — 13 unit + 1 live integration
+- A4 Component identification: LLM proposes uncertain factors — 14 unit + 1 live
+- A5 Review UI + cockpit handoff + narration — 53 tests
+- B1 LLM-prior research mechanism — 18 unit + 1 live
+- B2 Web search via Tavily — 32 unit + 1 live
+- B3 RAG over user-uploaded documents — ESM gap fixed; 12 unit tests (gated)
+- B4 Multi-LLM consensus — 19 unit + 1 live
+- B5 Forecast adapter (ensemble sidecar) — 13 unit + 1 sidecar live
+- B5 Empirical observation adapter — 12 unit
+- B6 Picker UI + RESEARCHING auto-advance — 38+ validator tests
+- B7 Expert panel (structured elicitation) — 28 unit
+- D1 NodeProvenance on UncertaintyNode — 30 bundle-to-node + 8 schema tests
+- D2 Per-research-step audit events + citationCount — 5 tests
+- D3 Dual JSON + Markdown conversation export — 25 export tests
+- P3a MODELING auto-advance: `bundleToNode()` → `runSimulation(10k)` → `computeSensitivity()` → `modelComplete` applied server-side — 12 unit tests
+- P3b Export download UI: JSON + MD buttons in ResultStep wired to `/api/semantic/[id]/export`
 
-**Phase B research mechanisms:**
-- B1 LLM-prior: distribution + params + cited reasoning, distribution-mismatch detection.
-- B2 web search via Tavily: provider abstraction + per-claim citation URLs.
-- B3 RAG: BGE embed + LanceDB per-workspace tables + per-chunk citations. Code path complete; Jest harness gap blocks integration tests.
-- B4 multi-LLM consensus: parallel fan-out with bounded concurrency, distribution-family vote + envelope widening, disagreement score.
-- B5 forecast: ace_hospital ensemble → Normal centered on point + sd = (ci_high - ci_low) / 3.92.
-- B5 empirical: analyzeObservedRows → Normal centered on empirical mean.
-- B7 expert panel: zero-LLM pure stat transform from 2-50 estimates.
+**Forecast Mode:** Time-series CSV → Python ensemble sidecar → per-model weights + 95% interval + calibration feedback loop (R6-06) ✅
 
-**Persistence + audit:** Every Semantic conversation persists to SQLite with userId + workspaceId ownership guards. Every event is audit-logged with state-kind transitions but never the event payload (no PII, no raw CSV rows, no LLM response bodies, no chunk content).
+**Calibration system:** Brier score, reliability diagram, EMA-based Beta prior updates ✅
 
-**Pre-Phase-B work** (still working): Real Data Mode, Forecast Mode, R6-06 calibration loop, Multi-LLM Proposer, Path A draft banner + flag gate, OpenRouter client (P7-01), triangular + Bernoulli + longitudinal engine extensions (C1-C3), node impact + reliability + Brier (C4-C5).
+**EMA snapshot durability (P2):** Atomic JSON snapshot written after every `/outcome`, restored on sidecar startup, Docker named volume `ensemble_data` — 11 pytest tests ✅
 
-### What's incomplete ⚠️
+**Real Data Mode, Multi-LLM Proposer, Path A Simulation** ✅ (gated by `LEGACY_PATH_A_ENABLED`)
 
-- **Phase D (provenance hardening)**: not started. Plan items:
-  - D1 — richer NodeProvenance with full per-mechanism citations migrated from the simpler `source` field.
-  - D2 — per-research-step audit-event refinements.
-  - D3 — full conversation Markdown export + JSON `AnalysisExport` shape.
-- **RAG live integration**: the path is implemented but Jest's CommonJS transform can't load `@xenova/transformers` (ESM-only). See Known Issues for the exact gap.
-- **Coverage uplift on `lib/ai/openrouter-client.ts` 88% → 90%** (carried from previous handoff; not blocking).
-- **Reliability diagram canvas** still uses the legacy non-empty-bin data path; API now returns the richer report but the canvas hasn't been updated to consume it.
+### What's Incomplete ⚠️
 
-### What's broken ❌
+- **Path A non-dismissible banner** — still gated by `LEGACY_PATH_A_ENABLED=true`. No multi-LLM-graph-alignment (R6-07) planned.
+- **RAG integration tests** — 12 tests require `RUN_RAG_INTEGRATION=1` + live `OPENROUTER_API_KEY`; smoke-tested via `npm run smoke:rag`.
 
-None on the unit / build / lint / E2E paths. RAG live integration is unverified (see Known Issues).
+### What's Broken ❌
 
-### Current blockers 🚧
+None. All gates green.
 
-None blocking continued execution. Phase D is ready to start when prioritized.
+### Current Blockers 🚧
 
-### Feature completion matrix
-
-| Feature | Status | Evidence | Priority |
-|---|---|---|---|
-| Semantic state machine (A1) | ✅ | `lib/semantic/state-machine.ts`, 52 unit tests | — |
-| Conversation persistence + API (A2) | ✅ | `app/api/semantic/*`, 33 tests + ownership-guard cases | — |
-| Clarifying step (A3) | ✅ | `lib/semantic/clarify.ts` + 13 unit + 1 live integration | — |
-| Component identification (A4) | ✅ | `lib/semantic/propose-components.ts` + 14 unit + 1 live integration | — |
-| Review UI + cockpit handoff + narration (A5) | ✅ | `components/SemanticPanel.tsx` + semantic/*.tsx, 53 tests | — |
-| A5-followup: validator coverage 99% | ✅ | commit `4095383` | — |
-| A5-followup: server-side auto-advance | ✅ | `lib/semantic/auto-advance.ts` + live integration | — |
-| B1 LLM-prior research | ✅ | `lib/semantic/research/llm-prior.ts` + 18 unit + 1 live | — |
-| B2 web search (Tavily) | ✅ | `lib/search/*` + `lib/semantic/research/web.ts` + 32 unit + 1 live | — |
-| B3 RAG over uploaded documents | ⚠️ | full code path on disk; Jest harness blocks ESM | P2 |
-| B4 multi-LLM consensus | ✅ | `lib/semantic/research/consensus.ts` + 19 unit + 1 live | — |
-| B5 Forecast adapter | ✅ | `lib/semantic/research/forecast.ts` + 13 unit + 1 sidecar live | — |
-| B5 Empirical adapter | ✅ | `lib/semantic/research/empirical.ts` + 12 unit | — |
-| B6 Picker UI + RESEARCHING auto-advance | ✅ | `components/semantic/ResearchStep.tsx`, `lib/semantic/auto-advance.ts` extended, 38+ validator tests | — |
-| B7 Expert panel | ✅ | `lib/semantic/research/expert-panel.ts` + 28 unit | — |
-| Citations contract on ResearchBundle | ✅ | `lib/semantic/types.ts` + 11 validator tests | — |
-| Phase D — provenance hardening | ❌ | not started | P1 |
-| Reliability empty-bin canvas | ⚠️ | API returns it; UI does not consume it yet | P2 |
-| openrouter-client coverage 88→90% | ⚠️ | known gap from earlier handoff | P2 |
+None. All P0–P3 planned work is complete.
 
 ---
 
-## Recent Changes (last ~15 commits)
+## Feature Completion Matrix
 
-| Date | SHA | Change | Why |
+| Feature | Status | Evidence | Priority |
 |---|---|---|---|
-| 2026-05-20 10:22 | `3db8a20` | feat(B6): picker UI + RESEARCHING auto-advance | Final Phase B sub-phase; mechanism dispatch end-to-end |
-| 2026-05-20 06:14 | `09e084b` | fix(B3 follow-up): unused-var lint + gate LanceDB-dependent tests | Make `npm run build` clean on default checkout |
-| 2026-05-20 05:48 | `0d25436` | feat(B3): RAG pipeline tests | + 59 RAG-related tests, gated |
-| 2026-05-20 05:47 | `2625dd4` | feat(B3): /api/semantic/documents upload + list + load + delete | New API surface |
-| 2026-05-20 05:47 | `e5045be` | feat(B3): RAG research orchestrator | mechanism module |
-| 2026-05-20 05:47 | `67790d4` | feat(B3): RAG adapters — chunker, extractor, embedder, vector store | |
-| 2026-05-20 05:46 | `6642fd9` | feat(B3): wire RAG dependencies | @xenova/transformers + @lancedb/lancedb + pdf-parse |
-| 2026-05-20 05:45 | `901aedc` | feat(B3): SemanticDocument schema + migration | |
-| 2026-05-20 03:11 | `53c67de` | feat(B1+B2+B4+B5+B7): five research mechanisms + citations contract | First five mechanisms ship together |
-| 2026-05-19 23:14 | `94c4a71` | feat(A5 follow-up): wire A3+A4 LLM adapters into POST/PATCH via autoAdvance | Server-side auto-advance pattern |
-| 2026-05-19 19:30 | `4095383` | test(A5 follow-up): lift validator coverage 26% → 99% | Coverage regression close |
-| 2026-05-19 18:46 | `859d2f1` | feat(A5b): semantic panel + per-step UI + cockpit handoff | Semantic Mode UI |
-| 2026-05-19 17:22 | `c2ea2df` | feat(A5a): semantic api client + narration mapper + jest jsx transform | |
-| 2026-05-19 15:01 | `e719a00` | feat(A2+A3+A4): semantic persistence, clarifying, component proposal | First Phase A merge |
-| 2026-05-19 11:08 | `ccd4028` | feat(A1): semantic conversation state machine | Phase A foundation |
+| Semantic state machine (A1) | ✅ | 52 unit tests | — |
+| Conversation persistence + API (A2) | ✅ | 33 tests | — |
+| Clarifying step (A3) | ✅ | 13 unit + 1 live | — |
+| Component identification (A4) | ✅ | 14 unit + 1 live | — |
+| Review UI + cockpit handoff + narration (A5) | ✅ | 53 tests | — |
+| B1 LLM-prior research | ✅ | 18 unit + 1 live | — |
+| B2 web search (Tavily) | ✅ | 32 unit + 1 live | — |
+| B3 RAG over uploaded documents | ✅ | ESM gap fixed; 12 unit tests gated | — |
+| B4 multi-LLM consensus | ✅ | 19 unit + 1 live | — |
+| B5 Forecast adapter | ✅ | 13 unit + 1 sidecar live | — |
+| B5 Empirical adapter | ✅ | 12 unit | — |
+| B6 Picker UI + RESEARCHING auto-advance | ✅ | 38+ validator tests | — |
+| B7 Expert panel | ✅ | 28 unit | — |
+| D1 NodeProvenance migration | ✅ | 30 bundle-to-node + 8 schema tests | — |
+| D2 per-research-step audit events | ✅ | 5 citationCount tests | — |
+| D3 dual Markdown + JSON export | ✅ | 25 export tests | — |
+| openrouter-client ≥90% coverage | ✅ | 98% lines | — |
+| Reliability empty-bin canvas | ✅ | CalibrationModal hollow ticks for empty bins | — |
+| Sidecar EMA durability (P2) | ✅ | atomic JSON snapshot + Docker named volume; 11 pytest | — |
+| MODELING auto-advance (P3a) | ✅ | `lib/semantic/auto-advance.ts`; 12 unit tests | — |
+| Export download UI (P3b) | ✅ | `components/semantic/ResultStep.tsx` JSON+MD buttons | — |
+| Naked-straddle stash decision (P3c) | ✅ | stash@{0} dropped | — |
 
-**Uncommitted changes:** none. **Stashed work:** `stash@{0}` (naked-straddle scaffolding from 2026-05-17; intentionally parked).
+---
+
+## Recent Changes
+
+| SHA | Change | Why |
+|---|---|---|
+| `518f509` | docs: update handoff for P3 completion | Continuity |
+| `fe4c03a` | feat(P3): MODELING auto-advance + ResultStep export download buttons | Close all P3 items; Semantic Mode modeling loop end-to-end server-side |
+| `746b297` | docs: update handoff for EMA durability completion | Continuity |
+| `14ae564` | feat(P2): EMA snapshot durability | Calibration learning survives container restarts |
+| `7ee6933` | fix(P2): openrouter-client coverage uplift + reliability empty-bin canvas | Close last two P2 items |
+| `c58f9f0` | feat(D3): dual Markdown + JSON conversation export | Reproducibility + audit trails |
+| `10ba145` | feat(D2): per-research-step audit events + citationCount | Per-step traceability |
+| `f8ed8df` | feat(D1): NodeProvenance from research bundles | Rich provenance for engine + export |
+| `a23325d` | fix(rag): replace eval('require') with dynamic import + smoke:rag | Fix Jest ESM gap for RAG |
+
+**Uncommitted Changes:** none  
+**Stashed Work:** none (stash@{0} dropped this session)
 
 ---
 
 ## Configuration & Secrets
 
-### Environment variables
+### Environment Variables
 
-| Variable | Purpose | Where to get |
+| Variable | Purpose | Required |
 |---|---|---|
-| `DATABASE_URL` | Prisma SQLite path | `.env` (`DATABASE_URL=file:./dev.db`) |
-| `OPENROUTER_API_KEY` | Required for Semantic Mode, Path A, Multi-Proposer, AI Assist, all LLM research mechanisms | `.env.local` only; never commit |
-| `OPENROUTER_MODELS` | Comma-sep list shown in selector | `.env.local` |
-| `OPENROUTER_DEFAULT_MODEL` | Default of the above list | `.env.local` |
-| `OPENROUTER_TIMEOUT_MS` | Per-call wall-clock timeout (default 60000) | `.env.local` optional |
-| `OPENROUTER_PER_CALL_BUDGET_USD` | Per-call cost ceiling (default 0.05) | `.env.local` optional |
-| `OPENROUTER_PROPOSER_CONCURRENCY` | Multi-proposer / consensus pool size (default 3) | `.env.local` optional |
-| `OPENROUTER_LIVE_SMOKE` | Live-smoke gate | default 0 |
-| `LEGACY_PATH_A_ENABLED` | Path A route gate (exactly `true` or `false`) | default `true` |
-| `ENSEMBLE_SIDECAR_URL` | Python sidecar URL | default `http://localhost:8001` |
-| **`TAVILY_API_KEY`** *(NEW Phase B2)* | Web search research mechanism | https://tavily.com/ — free tier ok |
-| **`FINESS_LANCEDB_ROOT`** *(NEW Phase B3, optional)* | Override LanceDB root directory | default `<repo>/data/lancedb` |
-| **`FINESS_RAG_MAX_UPLOAD_BYTES`** *(NEW Phase B3, optional)* | Hard cap on RAG document upload | default 10485760 (10MB) |
+| `OPENROUTER_API_KEY` | All LLM research mechanisms | Yes (LLM features) |
+| `TAVILY_API_KEY` | `web_search` research mechanism only | No (optional mechanism) |
+| `DATABASE_URL` | Prisma SQLite — must be in `.env` AND `.env.local` | Yes |
+| `OPENROUTER_MODELS` | Comma-sep model list shown in UI selector | Optional (has default) |
+| `OPENROUTER_DEFAULT_MODEL` | Active model for all LLM calls | Optional (has default) |
+| `OPENROUTER_TIMEOUT_MS` | Per-call timeout cap (default 60000) | Optional |
+| `OPENROUTER_PER_CALL_BUDGET_USD` | Per-call cost ceiling (default $0.05) | Optional |
+| `ENSEMBLE_SIDECAR_URL` | Python sidecar base URL (default `http://localhost:8001`) | Optional |
+| `LEGACY_PATH_A_ENABLED` | Gate for Path A draft mode (default `true`) | Optional |
+| `FINESS_LANCEDB_ROOT` | Override LanceDB root directory | Optional |
+| `FINESS_RAG_MAX_UPLOAD_BYTES` | RAG upload size cap (default 10MB) | Optional |
 
-### External dependencies
+### External Services
 
-| Service | Purpose | Local alternative |
+| Service | Purpose | Local Alternative |
 |---|---|---|
-| OpenRouter | All LLM calls (only outbound LLM provider) | None — fails closed, no fake fallback |
-| **Tavily** *(NEW)* | Web search research mechanism | None — provider abstraction allows future swap to Brave/Bing |
-| Python ensemble sidecar | Forecast Mode + R6-06 + B5 forecast adapter | `docker compose up -d ensemble` |
-| **`@xenova/transformers` BAAI model** *(NEW)* | RAG embeddings (~130MB local download on first use) | Local-only, cached at `data/.cache/transformers/` |
-| **LanceDB native binding** *(NEW)* | RAG vector store | Local-only, one table per workspace |
-| SQLite | Local persistence | Always-local at `prisma/dev.db` |
+| OpenRouter | LLM calls for all research mechanisms | None — required for Semantic Mode |
+| Tavily | Web search snippets for `web_search` mechanism | None — required for that mechanism only |
+| Python sidecar (Docker) | Forecast Mode + calibration EMA | `docker compose up -d ensemble` |
 
 ---
 
 ## Known Issues & Tech Debt
 
-### RAG Jest harness gap (P2)
-
-The B3 RAG live integration test fails with `Unexpected token 'export'` when Jest's default CommonJS transform tries to load `@xenova/transformers` (an ESM-only package).
-
-The package IS installed correctly in `node_modules`; the runtime path works fine via the `eval('require')` indirection the agent used to defeat webpack's static analyzer. Jest just needs to be told to transform the ESM dep or use `extensionsToTreatAsEsm`.
-
-**Workaround today:** The RAG path is gated behind `RUN_RAG_INTEGRATION=1` so the default test suite stays green. The associated 12 RAG unit tests are also under that gate (the B3 follow-up commit `09e084b` documents why).
-
-**Fix path:** Either
-1. Add `transformIgnorePatterns` exception for `@xenova/transformers` in `jest.config.ts`, OR
-2. Reorganize `lib/rag/embed.ts` to load the embedder via a dynamic `await import()` so Jest only resolves at runtime, not at module load.
-
-Neither option requires touching the package or other consumers. Estimated effort: a focused PR.
-
-### Other items carried from previous handoff
-
-- **`HANDOFF_LATEST.md` symlink** — kept as a stable mirror of the newest dated packet (this file). The 2026-05-19 dated packet is preserved separately for history.
-- **Sidecar EMA observation counter** is process-scoped (resets on container restart). SQLite calibration journal persists; in-memory EMA does not. Production durability is future work.
-- **Coverage on `lib/ai/openrouter-client.ts`** is 88% lines (gate is 90%). Lifting requires ~3 tests on AbortController cleanup paths and file-load-time env resolution.
-- **DeepSeek tail latency** (163s observed earlier) — currently absorbed by the 60s default timeout; the cost ceiling still catches runaway spend.
-- **Path A remains a draft mode behind `LEGACY_PATH_A_ENABLED`** until and unless we add a multi-LLM-graph-alignment layer (R6-07 in the older plan; not part of Phase D).
-- **Reliability diagram canvas** in `CalibrationModal.tsx` reads the legacy `calibrationCurve` shape; the `/api/calibration` GET returns the richer empty-bin-preserving report from C5a but the canvas doesn't consume it yet.
-
-### Outstanding Assumptions
-
-- **[SAFE ASSUMPTION]** Hosted deployment remains out of scope. All flag defaults assume local-dev posture.
-- **[SAFE ASSUMPTION]** Operator manages Docker for the sidecar manually before using Forecast Mode or `ensemble_forecast` research mechanism.
-- **[SAFE ASSUMPTION]** `OPENROUTER_DEFAULT_MODEL` not being in `OPENROUTER_MODELS` is fine — `getConfiguredModels` auto-adds it to the displayed list.
+- **RAG integration tests gated**: 12 tests under `RUN_RAG_INTEGRATION=1`. Run `npm run smoke:rag` when `OPENROUTER_API_KEY` is set to verify the full B3 path live.
+- **Path A non-dismissible banner**: `LEGACY_PATH_A_ENABLED` gates this mode; no further hardening planned.
+- **CI sidecar gap**: `.github/workflows/ci.yml` does not spin up the Docker ensemble sidecar, so Forecast Mode integration tests run against a mock sidecar client in CI. This is intentional — the sidecar tests run in the Python pytest suite separately.
 
 ---
 
 ## Next Steps (Priority Order)
 
-1. **P1 — Phase D1: richer NodeProvenance migration.** Migrate the simple `source` field on UncertaintyNode to a fuller provenance shape that carries citations through to the engine + UI (matching the `ResearchCitation` shape from Phase B). Migration must be idempotent against existing `dev.db` snapshots. Estimated scope: medium.
-2. **P1 — Phase D2: per-research-step audit refinements.** Surface mechanism + componentId + cost per step in audit events for the new RESEARCHING auto-advance path. Mostly already there in B6's commit; D2 is the final polish + new audit-event types if needed.
-3. **P1 — Phase D3: full conversation export.** Markdown defensibility doc + JSON `AnalysisExport`-extended shape that re-imports cleanly. Reproducibility test: re-import + re-run = identical samples.
-4. **P2 — Fix the RAG Jest harness gap.** One of the two paths above. Unlocks the 12 RAG unit tests + the 1 live integration test that's blocked today.
-5. **P2 — Lift `lib/ai/openrouter-client.ts` coverage** from 88% lines to 90%. ~3 tests on AbortController cleanup.
-6. **P2 — Reliability empty-bin canvas.** Update `CalibrationModal.tsx` to consume the richer `/api/calibration` report and render empty bins transparently.
-7. **P2 — Sidecar EMA durability.** Persist the EMA state across container restarts so calibration learning isn't lost on a redeploy.
+All P0–P3 planned work is complete. No outstanding tasks. Possible future directions (unscoped, not committed):
+
+- **Sidecar CI integration** — add `docker compose up` step to CI so Forecast Mode lives in the GH Actions pipeline.
+- **MODELING graph shapes beyond additive** — the current flat additive graph is a reasonable default; multiplicative or conditional nodes would require extending `bundleToNode()` and the graph builder in `runModeling()`.
+- **Hosted mode auth** — the local single-user session (`/api/auth/local`) is not suitable for multi-user hosted deployments; NextAuth or similar would be needed.
 
 ---
 
-## Key Files Reference (updated for Phases A + B)
+## Key Files Reference
 
-| File | Purpose | When to modify |
+| File | Purpose | When to Modify |
 |---|---|---|
-| `lib/semantic/state-machine.ts` | A1 reducer; 12 states + transitions | Adding a new event or state |
-| `lib/semantic/types.ts` | All semantic-mode types incl. ResearchBundle + ResearchCitation | Adding a research mechanism field |
-| `lib/semantic/auto-advance.ts` | Server-side LLM dispatch on PATCH | Adding a new mechanism that needs auto-firing |
-| `lib/validation/semantic.ts` | Request validators incl. startResearch inputs | Adding a new event payload field |
-| `lib/semantic/research/*.ts` | Per-mechanism adapters (7 files) | Adding an 8th mechanism (e.g. delphi) |
-| `lib/search/provider.ts` | Search provider interface | Swapping providers |
-| `lib/rag/{chunker,extract,embed,store}.ts` | RAG pipeline | Adding a new file type / embed model |
-| `components/semantic/*.tsx` | Per-step UI | Adding a step or changing flow |
-| `app/api/semantic/[id]/route.ts` | PATCH with reducer + auto-advance | Adding a new event-side-effect dispatch |
-| `prisma/schema.prisma` | All persistence models | Adding a table; coordinate with new migration |
+| `lib/types.ts` | Core types incl. `UncertaintyNode`, `NodeSource`, `NodeProvenance` | Adding a new source kind or provenance field |
+| `lib/semantic/state-machine.ts` | Pure reducer — all 12 states + events | Adding a new state or event |
+| `lib/semantic/auto-advance.ts` | Server-side LLM dispatch + MODELING Monte Carlo | Adding a new mechanism, graph shape, or audit field |
+| `lib/semantic/bundle-to-node.ts` | `ResearchBundle` → `UncertaintyNode` converter | Adding a new distribution or param mapping |
+| `lib/semantic/export.ts` | Conversation → JSON / Markdown | Changing the export schema or adding fields |
+| `lib/engine/monte-carlo.ts` | `runSimulation()` — 10k sample Monte Carlo | Changing simulation config or output shape |
+| `lib/engine/sensitivity.ts` | `computeSensitivity()` — variance reduction | Changing sensitivity algorithm |
+| `lib/audit/events.ts` | `AuditEventType` union + `FORBIDDEN_AUDIT_METADATA_KEYS` | Adding a new audit event or PII rule |
+| `app/api/semantic/[id]/route.ts` | PATCH handler — dispatches event + runs auto-advance | Changing auto-advance loop or response shape |
+| `app/api/semantic/[id]/export/route.ts` | Export endpoint | Adding new format or auth change |
+| `components/semantic/ResultStep.tsx` | Result display + export download buttons | Changing result UI or export trigger |
+| `components/SemanticPanel.tsx` | Top-level Semantic Mode container | Adding a new step or wiring a new prop |
+| `services/ensemble/app.py` | Python sidecar — EMA persistence + forecast endpoints | Adding new endpoints or changing snapshot schema |
+| `docker-compose.yml` | Sidecar service + `ensemble_data` named volume | Adding services or changing volume config |
+| `prisma/schema.prisma` | DB schema — Analysis, Calibration, SemanticConversation, Document | Adding a new table or column |
 
 ---
 
-## Appendix A — Machine-readable summary
+## Open Questions / Decisions Needed
+
+None outstanding. All open questions from prior sessions have been resolved.
+
+---
+
+## Appendix: Machine-Readable Summary
 
 ```json
 {
   "project": "finess",
-  "generated": "2026-05-20T14:24:01Z",
+  "generated": "2026-05-21T18:30:00Z",
   "repo": {
     "branch": "main",
-    "commit": "3db8a20837393c06b08cb6e59d2475b27be22100",
+    "commit": "518f509",
+    "commit_date": "2026-05-21T15:55:47Z",
     "uncommitted_changes": false,
-    "stashed_work": 1,
+    "stashed_work": 0,
     "remote_in_sync": true
   },
   "stack": {
     "language": "TypeScript",
-    "framework": "Next.js 14.2.35",
-    "orm": "Prisma 6.19.3 / SQLite",
-    "sidecar": "Python 3.11 / FastAPI / ace_hospital.UnifiedACEEnsemble",
-    "search": "Tavily (provider abstraction)",
-    "rag": "@xenova/transformers BAAI/bge-small-en-v1.5 + @lancedb/lancedb"
+    "language_version": "Node 20 (CI)",
+    "framework": "Next.js",
+    "framework_version": "14.2.35"
   },
   "health": {
-    "tests_passing": 879,
+    "tests_passing": 962,
     "tests_failing": 0,
     "tests_skipped": 25,
-    "test_suites_passing": 59,
     "lint_clean": true,
     "type_check_clean": true,
-    "build_clean": true,
-    "coverage_gates_passing": true
+    "build_clean": true
   },
-  "phases_complete": ["A1", "A2", "A3", "A4", "A5", "B1", "B2", "B3", "B4", "B5", "B6", "B7", "C1", "C2", "C3a", "C3b", "C4", "C5a", "C5b"],
-  "phases_remaining": ["D1", "D2", "D3"],
   "status": {
     "working": [
-      "Semantic Mode end-to-end",
-      "All seven research mechanisms (unit + 4 live integration verified)",
-      "Real Data Mode",
+      "Semantic Mode full pipeline A1-A5 + B1-B7 + D1-D3 + P3a-P3b",
+      "MODELING auto-advance (bundleToNode + MC 10k samples + sensitivity, server-side)",
+      "Export download UI (JSON + MD buttons in ResultStep)",
       "Forecast Mode + R6-06 calibration loop",
+      "Sidecar EMA snapshot durability (atomic JSON + Docker named volume)",
+      "Real Data Mode",
       "Multi-LLM Proposer",
-      "Path A (gated, draft-only)"
+      "Path A draft mode (gated)",
+      "NodeProvenance on UncertaintyNode",
+      "Per-research-step audit events",
+      "Dual JSON + Markdown conversation export",
+      "Reliability empty-bin canvas",
+      "openrouter-client coverage 98%"
     ],
     "incomplete": [
-      "Phase D (provenance hardening)",
-      "RAG live integration (Jest ESM gap)",
-      "Reliability empty-bin canvas",
-      "openrouter-client coverage 88→90%"
+      "RAG integration tests gated (RUN_RAG_INTEGRATION=1)",
+      "Path A banner non-dismissible (LEGACY_PATH_A_ENABLED gate)"
     ],
     "broken": [],
     "blockers": []
   },
-  "next_steps": [
-    {"task": "Phase D1 — richer NodeProvenance migration", "priority": "P1", "scope": "medium"},
-    {"task": "Phase D2 — per-research-step audit refinements", "priority": "P1", "scope": "small"},
-    {"task": "Phase D3 — full conversation export (Markdown + JSON)", "priority": "P1", "scope": "medium"},
-    {"task": "Fix RAG Jest harness ESM gap", "priority": "P2", "scope": "small"},
-    {"task": "Lift openrouter-client coverage 88→90%", "priority": "P2", "scope": "small"},
-    {"task": "Reliability empty-bin canvas in CalibrationModal", "priority": "P2", "scope": "small"},
-    {"task": "Sidecar EMA durability", "priority": "P2", "scope": "medium"}
-  ]
+  "continuity": {
+    "previous_handoff_loaded": true,
+    "assumptions_imported": 0,
+    "debt_items_imported": 1,
+    "error_refs_imported": 0
+  },
+  "feature_completion_matrix": [
+    {"feature": "Semantic state machine (A1)", "status": "✅", "evidence": "__tests__/semantic/state-machine.test.ts", "priority": "—"},
+    {"feature": "Conversation persistence + API (A2)", "status": "✅", "evidence": "__tests__/semantic/persistence.test.ts", "priority": "—"},
+    {"feature": "Clarifying step (A3)", "status": "✅", "evidence": "__tests__/semantic/clarify.test.ts", "priority": "—"},
+    {"feature": "Component identification (A4)", "status": "✅", "evidence": "__tests__/semantic/propose-components.test.ts", "priority": "—"},
+    {"feature": "Review UI + cockpit + narration (A5)", "status": "✅", "evidence": "__tests__/semantic/narration.test.ts", "priority": "—"},
+    {"feature": "B1 LLM-prior research", "status": "✅", "evidence": "__tests__/semantic/research/", "priority": "—"},
+    {"feature": "B2 web search (Tavily)", "status": "✅", "evidence": "__tests__/search/tavily.test.ts", "priority": "—"},
+    {"feature": "B3 RAG over documents", "status": "✅", "evidence": "__tests__/rag/ (unit); gated integration", "priority": "—"},
+    {"feature": "B4 multi-LLM consensus", "status": "✅", "evidence": "__tests__/ai/multi-proposer.test.ts", "priority": "—"},
+    {"feature": "B5 Forecast adapter", "status": "✅", "evidence": "__tests__/api/forecast.test.ts", "priority": "—"},
+    {"feature": "B5 Empirical adapter", "status": "✅", "evidence": "__tests__/semantic/research/", "priority": "—"},
+    {"feature": "B6 Picker UI + RESEARCHING auto-advance", "status": "✅", "evidence": "__tests__/validation/semantic.test.ts", "priority": "—"},
+    {"feature": "B7 Expert panel", "status": "✅", "evidence": "__tests__/semantic/research/", "priority": "—"},
+    {"feature": "D1 NodeProvenance", "status": "✅", "evidence": "__tests__/semantic/bundle-to-node.test.ts (30)", "priority": "—"},
+    {"feature": "D2 audit refinements", "status": "✅", "evidence": "__tests__/semantic/auto-advance-citation-count.test.ts (5)", "priority": "—"},
+    {"feature": "D3 conversation export", "status": "✅", "evidence": "__tests__/semantic/export.test.ts (25)", "priority": "—"},
+    {"feature": "P2 openrouter-client coverage", "status": "✅", "evidence": "98% lines", "priority": "—"},
+    {"feature": "P2 reliability empty-bin canvas", "status": "✅", "evidence": "components/CalibrationModal.tsx", "priority": "—"},
+    {"feature": "P2 sidecar EMA durability", "status": "✅", "evidence": "services/ensemble/tests/test_ema_snapshot.py (11)", "priority": "—"},
+    {"feature": "P3a MODELING auto-advance", "status": "✅", "evidence": "__tests__/semantic/auto-advance-modeling.test.ts (12)", "priority": "—"},
+    {"feature": "P3b export download UI", "status": "✅", "evidence": "components/semantic/ResultStep.tsx", "priority": "—"},
+    {"feature": "P3c naked-straddle stash decision", "status": "✅", "evidence": "stash@{0} dropped", "priority": "—"}
+  ],
+  "verification_suite": {
+    "command": "npm run check:env && npm test -- --runInBand && npm run build && npm run lint",
+    "pass_condition": "987 tests, 0 failures, build compiled, no lint warnings",
+    "result": "pass"
+  },
+  "next_steps": []
 }
 ```
