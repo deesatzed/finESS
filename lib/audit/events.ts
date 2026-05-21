@@ -33,7 +33,17 @@ export type AuditEventType =
   // latency / error codes are permitted in metadata.
   | "semantic.document_uploaded"
   | "semantic.document_deleted"
-  | "semantic.research_rag";
+  | "semantic.research_rag"
+  // Phase D2: per-research-step audit events. One event per mechanism
+  // dispatch; emitted from the PATCH route after autoAdvance returns.
+  // Metadata contract (same PII rules):
+  //   dispatched  → { conversationId, componentId, mechanism }
+  //   completed   → { conversationId, componentId, mechanism, latencyMs, costUsd, citationCount }
+  //   failed      → { conversationId, componentId, mechanism, latencyMs, errorSummary }
+  // errorSummary is truncated to 256 chars (same as sanitizeValue for strings).
+  | "semantic.research_dispatched"
+  | "semantic.research_completed"
+  | "semantic.research_failed";
 
 interface AuditEventInput {
   type: AuditEventType;

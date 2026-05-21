@@ -149,6 +149,8 @@ export interface AutoAdvanceStep {
   mechanism?: ResearchMechanism;
   /** B6: componentId researched, when this step was a research dispatch. */
   componentId?: string;
+  /** D2: number of citations returned by the research bundle (for audit). */
+  citationCount?: number;
 }
 
 export interface AutoAdvanceResult {
@@ -470,6 +472,7 @@ async function runResearch(
         failed: false,
         mechanism,
         componentId,
+        citationCount: bundle.citations?.length ?? 0,
       },
     };
   } catch (err) {

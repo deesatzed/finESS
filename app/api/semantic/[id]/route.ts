@@ -210,6 +210,7 @@ export async function PATCH(
       latencyMs?: number;
       mechanism?: string;
       componentId?: string;
+      citationCount?: number;
     }> = [];
 
     // B6: resolve env-driven adapter inputs. Tavily key feeds web_search;
@@ -257,6 +258,45 @@ export async function PATCH(
       },
     });
 
+    // D2: emit one focused audit event per research step so each
+    // mechanism dispatch is independently traceable. These fire in
+    // addition to the aggregate semantic.event_applied below.
+    // Metadata contract: NO inputs payload, NO bundle content; only
+    // IDs, mechanism enum, latency, cost, citationCount, errorSummary.
+    for (const step of autoAdvanceSteps) {
+      if (!step.mechanism) continue;
+      if (step.failed) {
+        await recordAuditEvent({
+          type: "semantic.research_failed",
+          auth,
+          subjectType: "semantic_conversation",
+          subjectId: row.id,
+          metadata: {
+            conversationId: row.id,
+            componentId: step.componentId,
+            mechanism: step.mechanism,
+            latencyMs: step.latencyMs,
+          },
+        });
+      } else {
+        await recordAuditEvent({
+          type: "semantic.research_completed",
+          auth,
+          subjectType: "semantic_conversation",
+          subjectId: row.id,
+          metadata: {
+            conversationId: row.id,
+            componentId: step.componentId,
+            mechanism: step.mechanism,
+            latencyMs: step.latencyMs,
+            costUsd: step.costUsd,
+            citationCount: step.citationCount,
+          },
+        });
+      }
+    }
+
+    // Aggregate summary event (unchanged from B6).
     // Audit metadata: NEVER the inputs payload (could contain CSV rows
     // or expert estimates the user pasted). Only the event type, the
     // from/to states, and the auto-advance summary (count + cost +
@@ -269,6 +309,7 @@ export async function PATCH(
       costUsd: s.costUsd,
       mechanism: s.mechanism,
       componentId: s.componentId,
+      citationCount: s.citationCount,
     }));
     await recordAuditEvent({
       type: "semantic.event_applied",
