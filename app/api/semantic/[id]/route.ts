@@ -12,6 +12,10 @@ import {
 import { reduce, SemanticStateError } from "@/lib/semantic/state-machine";
 import { autoAdvance } from "@/lib/semantic/auto-advance";
 import { getConfiguredModels } from "@/lib/ai/model-config";
+import {
+  getEnvOpenRouterApiKey,
+  getEnvTavilyApiKey,
+} from "@/lib/semantic/api-env";
 
 /**
  * GET /api/semantic/[id] — load one semantic conversation by id.
@@ -195,8 +199,7 @@ export async function PATCH(
     // appropriate adapter and apply its result-event before responding.
     // The reducer itself never makes I/O — auto-advance is the only
     // place an adapter call happens inside the PATCH handler.
-    const apiKey =
-      eventBody.apiKey ?? process.env.OPENROUTER_API_KEY;
+    const apiKey = eventBody.apiKey ?? getEnvOpenRouterApiKey();
     const model =
       eventBody.model ??
       process.env.OPENROUTER_DEFAULT_MODEL ??
@@ -215,7 +218,7 @@ export async function PATCH(
 
     // B6: resolve env-driven adapter inputs. Tavily key feeds web_search;
     // workspaceId feeds RAG; configured models feed consensus.
-    const tavilyApiKey = process.env.TAVILY_API_KEY?.trim() || undefined;
+    const tavilyApiKey = getEnvTavilyApiKey();
     const configured = getConfiguredModels(process.env);
     const consensusModels = configured.models.map((m) => m.id);
 

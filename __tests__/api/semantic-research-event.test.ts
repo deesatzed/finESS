@@ -111,7 +111,7 @@ describe("Semantic API — startResearch event dispatch", () => {
     // Make sure OPENROUTER_API_KEY is set so the route fires
     // auto-advance for non-startResearch events. The mocked adapters
     // catch the call before any real network goes out.
-    process.env.OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || "test-key";
+    process.env.OPENROUTER_API_KEY = "test-key";
     const pushed = spawnSync(
       "npx",
       ["prisma", "db", "push", "--skip-generate"],

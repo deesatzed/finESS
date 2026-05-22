@@ -11,6 +11,7 @@ import {
 } from "@/lib/semantic/persistence";
 import { initialState, reduce } from "@/lib/semantic/state-machine";
 import { autoAdvance } from "@/lib/semantic/auto-advance";
+import { getEnvOpenRouterApiKey } from "@/lib/semantic/api-env";
 
 /**
  * GET /api/semantic — list the requester's saved semantic conversations.
@@ -96,7 +97,7 @@ export async function POST(request: NextRequest) {
     // available we still create the conversation in CLARIFYING and skip
     // auto-advance so the client can recover via PATCH after the user
     // configures a key.
-    const apiKey = sessionApiKey ?? process.env.OPENROUTER_API_KEY;
+    const apiKey = sessionApiKey ?? getEnvOpenRouterApiKey();
     const model =
       sessionModel ?? process.env.OPENROUTER_DEFAULT_MODEL ?? "openrouter/auto";
 

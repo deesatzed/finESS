@@ -14,10 +14,22 @@ function readEnvFile(path) {
     if (equalsAt === -1) continue;
 
     const key = trimmed.slice(0, equalsAt).trim();
-    const value = trimmed.slice(equalsAt + 1).trim();
+    const value = normalizeEnvValue(trimmed.slice(equalsAt + 1).trim());
     values.set(key, value);
   }
   return values;
+}
+
+function normalizeEnvValue(value) {
+  if (value.length < 2) return value;
+
+  const first = value[0];
+  const last = value[value.length - 1];
+  if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
+    return value.slice(1, -1);
+  }
+
+  return value;
 }
 
 const cwd = process.cwd();

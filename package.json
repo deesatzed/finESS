@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "setup:local": "node scripts/setup-local.mjs",
     "check:env": "node scripts/check-env.mjs",
     "preflight:models": "node scripts/preflight-models.mjs",
     "smoke:openrouter": "node scripts/openrouter-live-smoke.mjs",
@@ -14,6 +15,7 @@
     "test:e2e": "jest --runInBand __tests__/e2e",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
+    "verify:local": "npm run setup:local && npm run check:env && jest --runInBand",
     "smoke:multi-proposer": "node scripts/multi-proposer-live-check.mjs",
     "smoke:rag": "node scripts/rag-live-smoke.mjs"
   },

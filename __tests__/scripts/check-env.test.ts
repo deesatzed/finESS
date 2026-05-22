@@ -68,4 +68,15 @@ describe("scripts/check-env.mjs", () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("Environment preflight passed");
   });
+
+  test("normalizes quoted env values before validating booleans", () => {
+    const cwd = makeTempProject({
+      ".env": 'DATABASE_URL="file:./dev.db"\nLEGACY_PATH_A_ENABLED="true"\n',
+    });
+
+    const result = runCheck(cwd);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("Environment preflight passed");
+  });
 });

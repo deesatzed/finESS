@@ -39,9 +39,25 @@ User pastes or uploads a CSV, picks a measured target column, and optionally set
 # 1. Install dependencies
 npm install
 
-# 2. Configure environment (two files — see .env.example for the full guide)
+# 2. Configure local env files and initialise SQLite/Prisma
+npm run setup:local
+```
+
+`setup:local` is safe to rerun. It creates `.env` and `.env.local` if they are
+missing, ensures both have `DATABASE_URL=file:./dev.db`, runs Prisma client
+generation, and syncs the local SQLite schema. It does not print secrets and it
+does not require OpenRouter, Docker, PostgreSQL, or external services.
+
+Manual equivalent:
+
+```bash
 cp .env.example .env          # Prisma reads DATABASE_URL from here
 cp .env.example .env.local    # Next.js reads OPENROUTER_* from here at runtime
+npx prisma generate
+npx prisma db push --skip-generate
+```
+
+```bash
 
 # 3. Set OPENROUTER_API_KEY in .env.local (optional — only needed for Path A,
 #    Multi-LLM Proposer, and AI Assist). Configure OPENROUTER_MODELS and
@@ -49,11 +65,7 @@ cp .env.example .env.local    # Next.js reads OPENROUTER_* from here at runtime
 #    https://openrouter.ai/models for current IDs. Do not hardcode model
 #    versions in code — the user selects them.
 
-# 4. Initialise the database
-npx prisma generate
-npx prisma migrate deploy   # or `npx prisma db push` for the SQLite dev file
-
-# 5. (Optional, required for Forecast Mode) bring up the Python ensemble sidecar
+# 4. (Optional, required for Forecast Mode) bring up the Python ensemble sidecar
 docker compose up -d ensemble
 curl -fsS http://localhost:8001/health
 ```
@@ -68,7 +80,9 @@ curl -fsS http://localhost:8001/health
 
 | Command | Expected outcome |
 |---|---|
+| `npm run setup:local` | Creates/repairs local env files and syncs the SQLite Prisma schema. Safe to rerun. |
 | `npm run check:env` | Prints `Environment preflight passed`. Fails if `DATABASE_URL` is unset or `LEGACY_PATH_A_ENABLED` is not exactly `true` or `false`. |
+| `npm run verify:local` | Runs `setup:local`, `check:env`, and the default offline Jest suite serially. Provider keys in `.env.local` are ignored by Jest unless an explicit live-test flag is set. |
 | `npm run preflight:models` | With no `OPENROUTER_API_KEY`: prints `PREFLIGHT_MODELS_SKIPPED`. With a key: probes every entry of `OPENROUTER_MODELS` and fails on any 4xx/5xx. |
 | `npm run smoke:openrouter` | Blocked-mode (no `OPENROUTER_LIVE_SMOKE=1`): prints `OPENROUTER_LIVE_SMOKE_BLOCKED` and exits 0 without printing secrets. |
 | `OPENROUTER_LIVE_SMOKE=1 npm run smoke:openrouter` | Live mode: prints `OPENROUTER_LIVE_SMOKE_OK` against the configured `OPENROUTER_DEFAULT_MODEL`. Requires a valid `OPENROUTER_API_KEY` in `.env.local`. |
